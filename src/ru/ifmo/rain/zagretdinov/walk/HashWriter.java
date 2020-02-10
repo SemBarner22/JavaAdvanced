@@ -17,15 +17,18 @@ public class HashWriter extends SimpleFileVisitor<Path> {
         this.bufferedWriter = bufferedWriter;
     }
 
-    private static int hash32(BufferedInputStream bufferedInputStream) throws IOException {
-        int rv = FNV_32_INIT;
-        byte[] data = new byte[1024];
-        int bytesRead = bufferedInputStream.read(data, 0, data.length);
-        while (bytesRead != -1) {
-            rv = hashCalc(data, bytesRead, rv);
-            bytesRead = bufferedInputStream.read(data, 0, data.length);
+    private static int hash32(Path path) throws IOException {
+        try (BufferedInputStream bufferedInputStream = new BufferedInputStream(
+                new FileInputStream(String.valueOf(path)))) {
+            int rv = FNV_32_INIT;
+            byte[] data = new byte[1024];
+            int bytesRead = bufferedInputStream.read(data, 0, data.length);
+            while (bytesRead != -1) {
+                rv = hashCalc(data, bytesRead, rv);
+                bytesRead = bufferedInputStream.read(data, 0, data.length);
+            }
+            return rv;
         }
-        return rv;
     }
 
     private static int hashCalc(byte[] data, int bytesRead, int rv) {
@@ -39,9 +42,8 @@ public class HashWriter extends SimpleFileVisitor<Path> {
     private FileVisitResult writeHash(Path path, boolean isFailed) {
         int hash = HASH_ERROR;
         if (!isFailed) {
-            try (BufferedInputStream bufferedInputStream = new BufferedInputStream(
-                    new FileInputStream(String.valueOf(path)))) {
-                hash = hash32(bufferedInputStream);
+            try {
+                hash = hash32(path);
             } catch (IOException e) {
                 System.out.println("An error occurred during reading a file " + path);
             }

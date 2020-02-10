@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 
 public class RecursiveWalk {
-    public static void main(String[] args) throws RecursiveWalkException{
+    public static void main(String[] args) throws ArgumentsException{
         if (args == null || args.length != 2 || args[0] == null || args[1] == null) {
             if (args == null || args.length != 2) {
                 System.err.println("Invalid amount of arguments! " +
@@ -15,7 +15,7 @@ public class RecursiveWalk {
             } else {
                 System.err.println("Input file must not be null");
             }
-            throw new RecursiveWalkException("Arguments error");
+            throw new ArgumentsException("Some arguments are not correct");
         }
         try (BufferedReader bufferedReader = Files.newBufferedReader(Paths.get(args[0]), StandardCharsets.UTF_8)) {
             try (BufferedWriter bufferedWriter = Files.newBufferedWriter(Paths.get(args[1]), StandardCharsets.UTF_8)) {
