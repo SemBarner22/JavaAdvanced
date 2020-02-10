@@ -1,9 +1,6 @@
 package ru.ifmo.rain.zagretdinov.walk;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedWriter;
-import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
@@ -20,18 +17,13 @@ public class HashWriter extends SimpleFileVisitor<Path> {
         this.bufferedWriter = bufferedWriter;
     }
 
-    private int hash32(BufferedInputStream bufferedInputStream, Path path) {
+    private static int hash32(BufferedInputStream bufferedInputStream) throws IOException {
         int rv = FNV_32_INIT;
         byte[] data = new byte[1024];
-        try {
-            int bytesRead = bufferedInputStream.read(data, 0, data.length);
-            while (bytesRead != -1) {
-                rv = hashCalc(data, bytesRead, rv);
-                bytesRead = bufferedInputStream.read(data, 0, data.length);
-            }
-        } catch (IOException e) {
-            System.out.println("An error occurred during reading a file " + path);
-            visitFileFailed(path, e);
+        int bytesRead = bufferedInputStream.read(data, 0, data.length);
+        while (bytesRead != -1) {
+            rv = hashCalc(data, bytesRead, rv);
+            bytesRead = bufferedInputStream.read(data, 0, data.length);
         }
         return rv;
     }
@@ -44,28 +36,33 @@ public class HashWriter extends SimpleFileVisitor<Path> {
         return rv;
     }
 
-    @Override
-    public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) {
-        try (BufferedInputStream bufferedInputStream = new BufferedInputStream(
-                new FileInputStream(String.valueOf(path)))) {
-            bufferedWriter.write(String.format("%08x %s\n", hash32(bufferedInputStream, path), path.toString()));
+    private FileVisitResult writeHash(Path path, boolean isFailed) {
+        int hash = HASH_ERROR;
+        if (!isFailed) {
+            try (BufferedInputStream bufferedInputStream = new BufferedInputStream(
+                    new FileInputStream(String.valueOf(path)))) {
+                hash = hash32(bufferedInputStream);
+            } catch (IOException e) {
+                System.out.println("An error occurred during reading a file " + path);
+            }
+        }
+        try {
+            bufferedWriter.write(String.format("%08x %s\n", hash, path.toString()));
         } catch (IOException e) {
             System.out.println("An error occurred while trying to output hash and filename "
                     + path + " " + e.getMessage());
-            visitFileFailed(path, e);
+            return FileVisitResult.TERMINATE;
         }
         return FileVisitResult.CONTINUE;
     }
 
     @Override
+    public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) {
+        return writeHash(path, false);
+    }
+
+    @Override
     public FileVisitResult visitFileFailed(Path path, IOException e) {
-        try {
-            bufferedWriter.write(String.format("%08x %s\n", HASH_ERROR, path.toString()));
-        } catch (IOException ex) {
-            System.out.println("An error occurred while trying to output hash and filename "
-                    + path + " " + ex.getMessage());
-            return FileVisitResult.TERMINATE;
-        }
-        return FileVisitResult.CONTINUE;
+        return writeHash(path, true);
     }
 }
