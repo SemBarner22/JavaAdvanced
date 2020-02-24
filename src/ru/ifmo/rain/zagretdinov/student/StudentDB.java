@@ -67,6 +67,8 @@ public class StudentDB implements StudentGroupQuery {
         return students
                 .collect(Collectors.groupingBy(Student::getGroup))
                 .entrySet().stream();
+
+
     }
 
     private Stream<Map.Entry<String, List<Student>>> streamSortedToGroup(Stream<Student> students,
