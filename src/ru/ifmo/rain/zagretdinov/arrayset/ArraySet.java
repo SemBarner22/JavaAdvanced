@@ -9,24 +9,15 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
     private Comparator<? super E> comparator;
 
     public ArraySet() {
-        list = Collections.unmodifiableList(new ArrayList<>());
-        this.comparator = null;
+        this(Collections.emptyList(), null);
     }
 
     public ArraySet(Comparator<? super E> comparator) {
-        list = Collections.unmodifiableList(new ArrayList<>());
-        this.comparator = comparator;
+        this(Collections.emptyList(), comparator);
     }
 
-    private ArraySet(List<E> list, Comparator<? super E> comparator) {
-        this.comparator = comparator;
-        this.list = list;
-    }
-
-    public ArraySet(Collection<E> c) {
-        this.comparator = null;
-        NavigableSet<E> treeSet = new TreeSet<>(c);
-        list = List.copyOf(treeSet);
+    public ArraySet(Collection<E> collection) {
+        this(collection, null);
     }
 
     public ArraySet(Collection<E> c, Comparator<? super E> comparator) {
@@ -34,6 +25,11 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
         NavigableSet<E> treeSet = new TreeSet<>(comparator);
         treeSet.addAll(c);
         list = List.copyOf(treeSet);
+    }
+
+    private ArraySet(List<E> list, Comparator<? super E> comparator) {
+        this.comparator = comparator;
+        this.list = list;
     }
 
     private void checkNull(E e) {
