@@ -35,7 +35,7 @@ public class FileHashVisitor extends SimpleFileVisitor<Path> {
         return rv;
     }
 
-    FileVisitResult writeHash(String string, boolean isFailed) throws IOException{
+    FileVisitResult writeHash(String string, boolean isFailed) throws IOException {
         int hash = HASH_ERROR;
         if (!isFailed) {
             Path path = null;

@@ -6,44 +6,47 @@ import java.nio.file.*;
 public class RecursiveWalk {
 
     public static void main(String[] args) {
-        if (args == null || args.length != 2 || args[0] == null || args[1] == null) {
-            if (args == null || args.length != 2) {
-                System.err.println("Invalid amount of arguments! " +
-                        "Usage: input filename output filename");
-            } else if (args[1] == null) {
-                System.err.println("Output file must not be null");
-            } else {
-                System.err.println("Input file must not be null");
-            }
+        if (args == null || args.length != 2) {
+            System.err.println("Invalid amount of arguments! " +
+                    "Usage: input filename output filename");
+            return;
+        } else if (args[1] == null) {
+            System.err.println("Output file must not be null");
+            return;
+        } else if (args[0] == null) {
+            System.err.println("Input file must not be null");
             return;
         }
-        Path path0;
-        Path path1;
+
+        Path pathInput, pathOutput;
         try {
-            path0 = Paths.get(args[0]);
-        } catch (InvalidPathException e) {
+            pathInput = pathGetter(args[0]);
+            pathOutput = pathGetter(args[1]);
+        } catch (WalkException e) {
             System.out.println("An error occurred during creating input path: " + e.getMessage());
             return;
         }
         try {
-            path1 = Paths.get(args[1]);
-        } catch (InvalidPathException e) {
-            System.out.println("An error occurred during creating output path: " + e.getMessage());
-            return;
-        }
-        try {
-            run(path0, path1);
+            run(pathInput, pathOutput);
         } catch (WalkException e) {
             System.out.println(e.getMessage());
         }
     }
 
-    private static void run(Path path0, Path path1) throws WalkException {
-        try (BufferedReader bufferedReader = Files.newBufferedReader(path0)) {
-            try (BufferedWriter bufferedWriter = Files.newBufferedWriter(path1)) {
-                String nextReadString;
+    private static Path pathGetter(String string) throws WalkException {
+        try {
+            return Paths.get(string);
+        } catch (InvalidPathException e) {
+            throw new WalkException("An error occurred during creating input path: " + string + " " + e.getMessage());
+        }
+    }
+
+    private static void run(Path pathInput, Path pathOutput) throws WalkException {
+        try (BufferedReader bufferedReader = Files.newBufferedReader(pathInput)) {
+            try (BufferedWriter bufferedWriter = Files.newBufferedWriter(pathOutput)) {
                 FileHashVisitor fileHashVisitor = new FileHashVisitor(bufferedWriter);
                 while (true) {
+                    String nextReadString;
                     try {
                         nextReadString = bufferedReader.readLine();
                         if (nextReadString == null) {
@@ -58,11 +61,15 @@ public class RecursiveWalk {
                             Files.walkFileTree(nextPath, fileHashVisitor);
                         } catch (IOException e) {
                             throw new WalkException("An error occurred while trying to output hash and filename to " +
-                                  path1.toString() + e.getMessage());
+                                    pathOutput.toString() + e.getMessage());
                         }
                     } catch (InvalidPathException e) {
-                        fileHashVisitor.writeHash(nextReadString, true);
-                        throw new WalkException("Impossible to create path: " + e.getMessage(), e);
+                        try {
+                            fileHashVisitor.writeHash(nextReadString, true);
+                        } catch (IOException ex) {
+                            throw new WalkException("An error occurred during writing hash file: "
+                                    + nextReadString + " " + ex.getMessage(), ex);
+                        }
                     }
                 }
             } catch (IOException e) {
