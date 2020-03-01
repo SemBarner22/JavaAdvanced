@@ -1,7 +1,5 @@
 package ru.ifmo.rain.zagretdinov.arrayset;
 
-import ru.ifmo.rain.zagretdinov.walk.WorkingCopy;
-
 import java.util.*;
 
 public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {

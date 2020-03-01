@@ -22,10 +22,20 @@ public class RecursiveWalk {
         try {
             pathInput = pathGetter(args[0]);
             pathOutput = pathGetter(args[1]);
+            try {
+                Path parentDirectory = pathOutput.getParent();
+                if (parentDirectory != null) {
+                    Files.createDirectories(parentDirectory);
+                }
+            } catch (IOException e) {
+                System.out.println("Could not make directory for output file: " + e.getMessage());
+                return;
+            }
         } catch (WalkException e) {
             System.out.println("An error occurred during creating input path: " + e.getMessage());
             return;
         }
+
         try {
             run(pathInput, pathOutput);
         } catch (WalkException e) {
@@ -37,7 +47,7 @@ public class RecursiveWalk {
         try {
             return Paths.get(string);
         } catch (InvalidPathException e) {
-            throw new WalkException("An error occurred during creating input path: " + string + " " + e.getMessage());
+            throw new WalkException("An error occurred during creating path: " + string + " " + e.getMessage());
         }
     }
 
@@ -46,29 +56,29 @@ public class RecursiveWalk {
             try (BufferedWriter bufferedWriter = Files.newBufferedWriter(pathOutput)) {
                 FileHashVisitor fileHashVisitor = new FileHashVisitor(bufferedWriter);
                 while (true) {
-                    String nextReadString;
+                    String line;
                     try {
-                        nextReadString = bufferedReader.readLine();
-                        if (nextReadString == null) {
+                        line = bufferedReader.readLine();
+                        if (line == null) {
                             break;
                         }
                     } catch (IOException e) {
                         throw new WalkException("An error occurred during read from input file: " + e.getMessage(), e);
                     }
                     try {
-                        Path nextPath = Paths.get(nextReadString);
+                        Path nextPath = Paths.get(line);
                         try {
                             Files.walkFileTree(nextPath, fileHashVisitor);
                         } catch (IOException e) {
                             throw new WalkException("An error occurred while trying to output hash and filename to " +
-                                    pathOutput.toString() + e.getMessage());
+                                    pathOutput.toString() + " " + e.getMessage());
                         }
                     } catch (InvalidPathException e) {
                         try {
-                            fileHashVisitor.writeHash(nextReadString, true);
+                            fileHashVisitor.writeHash(line, true);
                         } catch (IOException ex) {
                             throw new WalkException("An error occurred during writing hash file: "
-                                    + nextReadString + " " + ex.getMessage(), ex);
+                                    + line + " " + ex.getMessage(), ex);
                         }
                     }
                 }

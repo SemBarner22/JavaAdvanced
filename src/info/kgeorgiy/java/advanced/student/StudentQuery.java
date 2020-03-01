@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 public interface StudentQuery {
     /** Returns student {@link Student#getFirstName() first names}. */
     List<String> getFirstNames(final List<Student> students);
+
     /** Returns student {@link Student#getLastName() last names}. */
     List<String> getLastNames(final List<Student> students);
 

@@ -14,25 +14,28 @@ public class FileHashVisitor extends SimpleFileVisitor<Path> {
         this.bufferedWriter = bufferedWriter;
     }
 
-    private static int hash32(Path path) throws IOException {
+    private static int hash32(Path path) throws IOException, NullPointerException {
         try (BufferedInputStream inputStream = new BufferedInputStream(Files.newInputStream(path))) {
-            int rv = FNV_32_INIT;
+            int res = FNV_32_INIT;
             byte[] data = new byte[1024];
-            int bytesRead = inputStream.read(data, 0, data.length);
-            while (bytesRead != -1) {
-                rv = hashCalc(data, bytesRead, rv);
+            int bytesRead;
+            while (true) {
                 bytesRead = inputStream.read(data, 0, data.length);
+                if (bytesRead == -1) {
+                    break;
+                }
+                res = hashCalc(data, bytesRead, res);
             }
-            return rv;
+            return res;
         }
     }
 
-    private static int hashCalc(byte[] data, int bytesRead, int rv) {
+    private static int hashCalc(byte[] data, int bytesRead, int res) {
         for (int i = 0; i < bytesRead; i++) {
-            rv *= FNV_32_PRIME;
-            rv ^= (data[i] & 0xff);
+            res *= FNV_32_PRIME;
+            res ^= (data[i] & 0xff);
         }
-        return rv;
+        return res;
     }
 
     FileVisitResult writeHash(String string, boolean isFailed) throws IOException {
@@ -41,13 +44,13 @@ public class FileHashVisitor extends SimpleFileVisitor<Path> {
             Path path = null;
             try {
                 path = Paths.get(string);
+                try {
+                    hash = hash32(path);
+                } catch (IOException | NullPointerException e) {
+                    System.err.println("An error occurred during reading a file " + path);
+                }
             } catch (InvalidPathException e) {
                 System.err.println("Impossible to get path from: " + string + " " + e.getMessage());
-            }
-            try {
-                hash = hash32(path);
-            } catch (IOException e) {
-                System.err.println("An error occurred during reading a file " + path);
             }
         }
         bufferedWriter.write(String.format("%08x %s%n", hash, string));
