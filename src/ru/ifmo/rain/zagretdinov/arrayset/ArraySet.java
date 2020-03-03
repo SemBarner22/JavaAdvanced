@@ -3,8 +3,8 @@ package ru.ifmo.rain.zagretdinov.arrayset;
 import java.util.*;
 
 public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
-    private List<E> list;
-    private Comparator<? super E> comparator;
+    private final ReversedArrayList<E> array;
+    private final Comparator<? super E> comparator;
 
     public ArraySet() {
         this(Collections.emptyList(), null);
@@ -14,33 +14,36 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
         this(Collections.emptyList(), comparator);
     }
 
-    public ArraySet(Collection<E> collection) {
+    public ArraySet(Collection<? extends E> collection) {
         this(collection, null);
     }
 
-    public ArraySet(Collection<E> c, Comparator<? super E> comparator) {
-        this.comparator = comparator;
+    public ArraySet(Collection<? extends E> collection, Comparator<? super E> comparator) {
         NavigableSet<E> treeSet = new TreeSet<>(comparator);
-        treeSet.addAll(c);
-        list = List.copyOf(treeSet);
+        treeSet.addAll(collection);
+        this.array = new ReversedArrayList<>(new ArrayList<>(treeSet));
+        this.comparator = getValidComparator(comparator);
     }
 
-    private ArraySet(List<E> list, Comparator<? super E> comparator) {
+    private ArraySet(List<E> array, Comparator<? super E> comparator) {
         this.comparator = comparator;
-        this.list = list;
+        this.array = new ReversedArrayList<>(array);
     }
 
-    private void checkNull(E e) {
-        Objects.requireNonNull(e);
+    private Comparator<? super E> getValidComparator(Comparator<? super E> cmp) {
+        return Comparator.naturalOrder() == cmp ? null : cmp;
+    }
+
+    private E checkNull(E e) {
+        return Objects.requireNonNull(e, "Expected not null element");
     }
 
     private int getIndex(E e) {
-        checkNull(e);
-        return Collections.binarySearch(list, e, comparator);
+        return Collections.binarySearch(array, checkNull(e), comparator);
     }
 
     private int index(E e, boolean inclusive, boolean lower) {
-        int index = Collections.binarySearch(list, Objects.requireNonNull(e), comparator);
+        int index = getIndex(e);
         if (index < 0) {
             return lower ? (-index - 1 - 1) : (-index - 1);
         } else {
@@ -49,30 +52,22 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public boolean contains(Object o) {
-//        try {
-            return getIndex((E) o) >= 0;
-//        } catch (ClassCastException | NullPointerException e) {
-//            return false;
-//        }
-    }
-
-    public E get(int i) {
-        return list.get(i);
+    public Iterator<E> iterator() {
+        return array.iterator();
     }
 
     @Override
-    public void clear() {
-        throw new UnsupportedOperationException("ArraySet is unchangeable");
+    @SuppressWarnings("unchecked")
+    public boolean contains(Object o) {
+        return getIndex((E) o) >= 0;
+    }
+
+    public E get(int i) {
+        return array.get(i);
     }
 
     private E getOrNull(int index) {
-        if (index < 0 || index >= size()) {
-            return null;
-        } else {
-            return list.get(index);
-        }
+        return (0 <= index && index < size()) ? array.get(index) : null;
     }
 
     @Override
@@ -97,17 +92,21 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
 
     @Override
     public E pollFirst() {
-        throw new UnsupportedOperationException("ArraySet is unchangeable");
+        throw new UnsupportedOperationException(
+                "Poll First is not supported, ArraySet is unchangeable");
     }
 
     @Override
     public E pollLast() {
-        throw new UnsupportedOperationException("ArraySet is unchangeable");
+        throw new UnsupportedOperationException(
+                "Poll Last is not supported, ArraySet is unchangeable"
+        );
     }
 
     @Override
     public NavigableSet<E> descendingSet() {
-        return new ArraySet<>(new ReversedArrayList<>(list), Collections.reverseOrder(comparator));
+        return new ArraySet<>(new ReversedArrayList<E>(array),
+                Collections.reverseOrder(comparator));
     }
 
     @Override
@@ -116,37 +115,38 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
     }
 
     @Override
-    public NavigableSet<E> subSet(E e, boolean b, E e1, boolean b1) {
-        if ((comparator != null && comparator.compare(e, e1) > 0)  || comparator == null &&
-                e instanceof Comparable && ((Comparable) e).compareTo(e1) > 0) {
-            throw new IllegalArgumentException("Right bound should be greater than left");
-        } else {
-            return implSubSet(e, b, e1, b1);
+    public NavigableSet<E> subSet(E from, boolean isFromIncluded, E to, boolean isToIncluded) {
+        if (compare(from, to) > 0) {
+            throw new IllegalArgumentException("Left element shouldn't be greater than right");
         }
+        return implSubSet(from, isFromIncluded, to, isToIncluded);
     }
 
-    private NavigableSet<E> implSubSet(E e, boolean b, E e1, boolean b1) {
-        if (e == null || e1 == null) {
-            throw new IllegalArgumentException("Elements should not be null");
-        }
-        int index = index(e, b, false);
-        int index1 = index(e1, b1, true);
-        if (index > index1) {
+    @SuppressWarnings("unchecked")
+    private int compare(E e1, E e2) {
+        return (comparator == null) ? ((Comparable<E>) e1).compareTo(e2) : comparator.compare(e1, e2);
+    }
+
+    private NavigableSet<E> implSubSet(E from, boolean isFromIncluded, E to, boolean isToIncluded) {
+        checkNull(from);
+        checkNull(to);
+        int indexFrom = index(from, isFromIncluded, false);
+        int indexTo = index(to, isToIncluded, true);
+        if (indexFrom > indexTo) {
             return new ArraySet<>(comparator);
         } else {
-            return new ArraySet<>(list.subList(index, index1 + 1), comparator);
+            return new ArraySet<>(array.subList(indexFrom, indexTo + 1), comparator);
         }
     }
-
 
     @Override
     public NavigableSet<E> headSet(E e, boolean b) {
-        return isEmpty() ? new ArraySet<>(comparator) : implSubSet(first(), true, e, b);
+        return isEmpty() ? this : implSubSet(first(), true, e, b);
     }
 
     @Override
     public NavigableSet<E> tailSet(E e, boolean b) {
-        return isEmpty() ? new ArraySet<>(comparator) : implSubSet(e, b, last(), true);
+        return isEmpty() ? this : implSubSet(e, b, last(), true);
     }
 
     @Override
@@ -155,14 +155,8 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
     }
 
     @Override
-    public Iterator<E> iterator() {
-        return list.iterator();
-    }
-
-
-    @Override
-    public SortedSet<E> subSet(E e, E e1) {
-        return subSet(e, true, e1, false);
+    public SortedSet<E> subSet(E from, E to) {
+        return subSet(from, true, to, false);
     }
 
     @Override
@@ -178,9 +172,9 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
 
     private E firstLastImpl(int index) {
         if (!isEmpty()) {
-            return list.get(index);
+            return array.get(index);
         } else {
-            throw new NoSuchElementException("ArraySet is unchangeable");
+            throw new NoSuchElementException("ArraySet is empty");
         }
     }
 
@@ -196,22 +190,24 @@ public class ArraySet<E> extends AbstractSet<E> implements NavigableSet<E> {
 
     @Override
     public int size() {
-        return list.size();
+        return array.size();
     }
 
-    public class ReversedArrayList<T> extends AbstractList<T> implements RandomAccess {
-        private List<T> arrayList;
+    private class ReversedArrayList<T> extends AbstractList<T> implements RandomAccess {
+        private final List<T> arrayList;
         private boolean isReversed;
 
-        ReversedArrayList(List<T> arrayList) {
-            if (arrayList instanceof ReversedArrayList) {
-                ReversedArrayList<T> list = (ReversedArrayList<T>) arrayList;
-                this.arrayList = list.arrayList;
-                this.isReversed = !list.isReversed;
-            } else {
-                this.arrayList = arrayList;
-                this.isReversed = true;
-            }
+        private ReversedArrayList(List<T> other, boolean isReversed) {
+            arrayList = Collections.unmodifiableList(other);
+            this.isReversed = isReversed;
+        }
+
+        private ReversedArrayList(List<T> other) {
+            this(other, false);
+        }
+
+        private ReversedArrayList(ReversedArrayList<T> other) {
+            this(other.arrayList, !other.isReversed);
         }
 
         @Override

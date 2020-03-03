@@ -13,15 +13,54 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class Implementor implements Impler {
-    private BufferedWriter bufferedWriter;
-    private String wordsSeparator = " ";
-    private String operatorSeparator = ";";
-    private String beginningOfBlock = "{";
-    private String endOfBlock = "}";
-    private String openBracket = "(";
-    private String closeBracket = ")";
+    private static final String TAB = "\t";
+    private String SPACE = " ";
+    private String LINE_SEP = System.lineSeparator();
+    private String COLLECTION_SEPARATOR = ", ";
+    private String OPER_SEP = ";";
+    private String BLOCK_BEGIN = "{";
+    private String BLOCK_END = "}";
+    private String BRACKET_OPEN = "(";
+    private String BRACKET_END = ")";
+
+    private <T> String elementsToString(String delimiter, T[] elements, Function<T, String> transform) {
+        return Arrays.stream(elements).map(transform).collect(Collectors.joining(delimiter));
+    }
+
+    private <T> String elementsInCollectionToString(T[] items, Function<T, String> transform) {
+        return elementsToString(COLLECTION_SEPARATOR, items, transform);
+    }
+
+    private String elementsSpaced(String... parts) {
+        return Arrays.stream(parts).collect(Collectors.joining(SPACE));
+    }
+
+    private String elementsLineSeparated(String... blocks) {
+        return Arrays.stream(blocks).collect(Collectors.joining(LINE_SEP + LINE_SEP));
+    }
+
+    private String Tabs(int cnt) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < cnt; i++) {
+            builder.append(TAB);
+        }
+        return builder.toString();
+    }
+
+    private String getIfNotEmpty(String prefix, String itemList) {
+        if (!"".equals(itemList)) {
+            return elementsSpaced(prefix, itemList);
+        }
+        return "";
+    }
+
+    private String getPackage(Class<?> token) {
+        return getIfNotEmpty("package", token.getPackageName()) + OPER_SEP;
+    }
 
     private String getFilePath(Class<?> token) {
         return token.getPackageName().replace('.', File.separatorChar);
@@ -51,27 +90,18 @@ public class Implementor implements Impler {
                 Modifier.isFinal(token.getModifiers()) || token == Enum.class) {
             throw new ImplerException("Unsupported class token given");
         }
-        String classOrInterface = "class";
         String extendsOrImplements = token.isInterface() ? "implements" : "extends";
-        try {
-            bufferedWriter = Files.newBufferedWriter(Path.of(place.toString(), getClassName(token) + ".java"));
-            bufferedWriter.write("package " + token.getPackageName() + operatorSeparator + System.lineSeparator());
-            bufferedWriter.flush();
-            bufferedWriter.write(getClassModifiers(token) + " " + classOrInterface
-                    + " " + token.getSimpleName() + "Impl " + extendsOrImplements + " " + token.getCanonicalName() + " "
-                    + beginningOfBlock + System.lineSeparator());
-            bufferedWriter.flush();
+        try (BufferedWriter bufferedWriter = Files.newBufferedWriter(
+                Path.of(place.toString(), getClassName(token) + ".java"))) {
+            bufferedWriter.write(elementsLineSeparated(getPackage(token), LINE_SEP));
+            bufferedWriter.write(elementsSpaced(getClassModifiers(token),
+                    "class", getClassName(token), extendsOrImplements,
+                    token.getCanonicalName(), BLOCK_BEGIN, LINE_SEP));
+            allWork(token, bufferedWriter);
+            bufferedWriter.write(LINE_SEP + BLOCK_END + System.lineSeparator());
         } catch (IOException e) {
-            throw new ImplerException("Wrong path");
+            e.printStackTrace();
         }
-        allWork(token, root);
-        try {
-            bufferedWriter.write(endOfBlock + System.lineSeparator());
-            bufferedWriter.flush();
-        } catch (IOException e) {
-            throw new ImplerException("Wrong path");
-        }
-
     }
 
     private String getDefaultValue(Class<?> ret) {
@@ -86,121 +116,95 @@ public class Implementor implements Impler {
         }
     }
 
-    private void allWork(Class<?> token, Path root) {
-        Arrays.stream(token.getDeclaredConstructors()).forEach(constructor -> {
-            try {
-                String[] strings = getParameters(constructor);
-                if (strings[0] == null) {
-                    strings[0] = "";
-                }
-                if (strings[1] == null) {
-                    strings[1] = "";
-                }
-                bufferedWriter.write(token.getSimpleName() + "Impl" + openBracket);
-                bufferedWriter.write(strings[0] + closeBracket + beginningOfBlock + System.lineSeparator());
-                bufferedWriter.write('\t' + "super" + openBracket + strings[1] + closeBracket + operatorSeparator + System.lineSeparator() + endOfBlock + System.lineSeparator());
-            } catch (IOException e) {
-                e.printStackTrace();
+    private void methodWalker(Set<Integer> methodsHashed, Method[] methods, int modifier1, int modifier2,
+                              BufferedWriter bufferedWriter) {
+        Arrays.stream(methods).forEach(method -> {
+            StringBuilder hashing = new StringBuilder();
+            hashing.append(method.getReturnType().toString());
+            for (Class<?> m : method.getParameterTypes()) {
+                hashing.append(m.getCanonicalName());
             }
-        });
-
-        Set<Integer> methodsHashed = new HashSet<>();
-        Arrays.stream(token.getMethods()).forEach(method -> {
-                StringBuilder hashing = new StringBuilder();
-                hashing.append(method.getReturnType().toString());
-                for (Class<?> m : method.getParameterTypes()) {
-                    hashing.append(m.getCanonicalName());
-                }
-                int hash = hashing.hashCode();
-                if (methodsHashed.add(hash)) {
-                    if ((method.getModifiers() & Modifier.STATIC) == 0
-                            && (method.getModifiers() & Modifier.ABSTRACT) != 0) {
-                    methodWalk(method);
+            int hash = hashing.hashCode();
+            if (methodsHashed.add(hash)) {
+                if ((method.getModifiers() & modifier1) != 0
+                        && (method.getModifiers() & modifier2) != 0) {
+                    methodWalk(method, bufferedWriter);
                 }
             }
         });
+    }
 
-        Class cur = token;
-        while (cur != null) {
-            Arrays.stream(cur.getDeclaredMethods()).forEach(method -> {
-                    StringBuilder hashing = new StringBuilder();
-                    hashing.append(method.getReturnType().toString());
-                    for (Class<?> m : method.getParameterTypes()) {
-                        hashing.append(m.getCanonicalName());
-                    }
-                    int hash = hashing.hashCode();
-                    if (methodsHashed.add(hash)) {
-                        if ((method.getModifiers() & Modifier.ABSTRACT) != 0
-                                && (method.getModifiers() & Modifier.PROTECTED) != 0) {
-                        methodWalk(method);
-                    }
+    private class Indices {
+        int index = 1;
+        Integer add() {
+            return index++;
+        }
+    }
+
+    private void allWork(Class<?> token, BufferedWriter bufferedWriter) throws ImplerException {
+        if (!token.isInterface()) {
+            List<Constructor<?>> constructors = Arrays.stream(token.getDeclaredConstructors())
+                    .filter(c -> !Modifier.isPrivate(c.getModifiers()))
+                    .collect(Collectors.toList());
+            if (constructors.isEmpty()) {
+                throw new ImplerException("Class with no non-private constructors can not be extended");
+            }
+            Arrays.stream(token.getDeclaredConstructors()).forEach(constructor -> {
+                try {
+                    bufferedWriter.write(getEverything(constructor, token));
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
             });
+        }
+
+        Set<Integer> methodsHashed = new HashSet<>();
+        methodWalker(methodsHashed, token.getMethods(), ~Modifier.STATIC, Modifier.ABSTRACT, bufferedWriter);
+        Class cur = token;
+        while (cur != null) {
+            methodWalker(methodsHashed, cur.getDeclaredMethods(), Modifier.ABSTRACT, Modifier.PROTECTED, bufferedWriter);
             cur = cur.getSuperclass();
         }
     }
 
-    private void methodWalk(Method method) {
+    private void methodWalk(Method method, BufferedWriter bufferedWriter) {
         try {
-            String result = getDefaultValue(method.getReturnType());
-            bufferedWriter.write("@Override" + System.lineSeparator());
-            bufferedWriter.write(getMethodModifiers(method) + " " + method.getReturnType().getCanonicalName() +
-                    " " + method.getName() + " " + openBracket + getParameters(method) + closeBracket + " " +
-                    getThrowable(method) + beginningOfBlock + System.lineSeparator());
-            bufferedWriter.write('\t' + "return " + result + operatorSeparator + System.lineSeparator() + endOfBlock);
+            bufferedWriter.write(getEverything(method));
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private String getThrowable(Method method) {
-        StringBuilder result = new StringBuilder();
-        if (method.getExceptionTypes().length == 0) {
-            return "";
-        } else {
-            result.append("throws").append(" ");
-        }
-        for (Class t : method.getExceptionTypes()) {
-            result.append(t.getName()).append(",").append(" ");
-        }
-        result.delete(result.length() - 2, result.length());
-        return result.toString();
+    private String getEverything(Method method) {
+        return Tabs(1) + "@Override" + LINE_SEP + Tabs(1) + getMethodModifiers(method) + " " +
+                method.getReturnType().getCanonicalName() + " " + method.getName() + " " +
+                BRACKET_OPEN + getParameters(method.getParameterTypes()) + BRACKET_END + " "
+                + getThrowable(method.getExceptionTypes()) + " " + BLOCK_BEGIN + LINE_SEP
+                + Tabs(2) + "return " + getDefaultValue(method.getReturnType()) +
+                OPER_SEP + System.lineSeparator() + Tabs(1) + BLOCK_END;
     }
 
-    private String getParameters(Method method) {
-        StringBuilder result = new StringBuilder();
-        if (method.getParameterTypes().length == 0) {
-            return "";
-        }
-        int number = 1;
-        for (Class clazz : method.getParameterTypes()) {
-            result.append(clazz.getCanonicalName()).append(" ").append("_" + number).append(",").append(" ");
-            number++;
-        }
-        result.delete(result.length() - 2, result.length());
-        return result.toString();
+    private String getEverything(Constructor constructor, Class<?> token) {
+        return Tabs(1) + getClassName(token) + BRACKET_OPEN + getParameters(constructor.getParameterTypes()) +
+                BRACKET_END + " " + getThrowable(constructor.getExceptionTypes()) + BLOCK_BEGIN + LINE_SEP + Tabs(2)
+                + "super" + BRACKET_OPEN + getParametersNumbers(constructor.getParameterTypes()) + BRACKET_END + OPER_SEP + LINE_SEP
+                + BLOCK_END + LINE_SEP;
     }
 
-    private String[] getParameters(Constructor constructor) {
-        StringBuilder[] result = new StringBuilder[2];
-        result[0] = new StringBuilder();
-        result[1] = new StringBuilder();
-        if (constructor.getParameterTypes().length == 0) {
-            String[] strings = new String[2];
-            return strings;
-        }
-        int number = 1;
-        for (Class clazz : constructor.getParameterTypes()) {
-            result[0].append(clazz.getCanonicalName()).append(" ").append("_" + number).append(",").append(" ");
-            result[1].append("_" + number).append(",").append(" ");
-            number++;
-        }
-        result[0].delete(result[0].length() - 2, result[0].length());
-        result[1].delete(result[1].length() - 2, result[1].length());
-        String[] strings = new String[2];
-        strings[0] = result[0].toString();
-        strings[1] = result[1].toString();
-        return strings;
+    private String getThrowable(Class[] exceptionTypes) {
+        return exceptionTypes.length == 0 ? "" : "throws " + elementsToString(COLLECTION_SEPARATOR, exceptionTypes, Class::getName);
+    }
+
+    private String getParameters(Class[] parameterTypes) {
+        Indices indices = new Indices();
+        return parameterTypes.length == 0 ? "" :
+                elementsInCollectionToString(parameterTypes, parameter -> elementsSpaced(parameter.getCanonicalName(), "_" + indices.add()));
+    }
+
+    private String getParametersNumbers(Class[] parameterTypes) {
+        Indices indices = new Indices();
+        return parameterTypes.length == 0 ? "" :
+                elementsInCollectionToString(parameterTypes, parameter -> elementsSpaced("_" + indices.add()));
     }
 
     private String getClassModifiers(Class<?> token) {
