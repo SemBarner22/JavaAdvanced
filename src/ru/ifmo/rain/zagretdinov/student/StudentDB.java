@@ -9,6 +9,7 @@ import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -24,26 +25,22 @@ public class StudentDB implements AdvancedStudentGroupQuery {
         return student.getFirstName() + " " + student.getLastName();
     }
 
+    private <T, C extends Collection<T>> C mapToCollection(Collection<Student> students, Function<Student, T> map,
+                                                           Supplier<C> collector) {
+        return students.stream().map(map).collect(Collectors.toCollection(collector));
+    }
+
     private <T> List<T> mapToList(Collection<Student> students, Function<Student, T> map) {
-        return students.stream().map(map).collect(Collectors.toList());
+        return mapToCollection(students, map, ArrayList::new);
     }
 
-    private Stream<Student> filterToStream(Stream<Student> students, Predicate<Student> condition) {
-        return students.filter(condition);
-    }
-
-    private List<Student> filterAndSort(Collection<Student> students, Predicate<Student> condition) {
-        return filterToStream(students.stream(), condition).sorted(STUDENT_BY_NAME_COMPARATOR)
+    private List<Student> filterAndSortByName(Collection<Student> students, Predicate<Student> condition) {
+        return students.stream().filter(condition).sorted(STUDENT_BY_NAME_COMPARATOR)
                 .collect(Collectors.toList());
     }
 
     private List<Student> sortToListBy(Collection<Student> students, Comparator<Student> comparator) {
         return students.stream().sorted(comparator).collect(Collectors.toList());
-    }
-
-    private <T, C extends Collection<T>> C mapToCollection(Collection<Student> students, Function<Student, T> map,
-                                                           Supplier<C> collector) {
-        return students.stream().map(map).collect(Collectors.toCollection(collector));
     }
 
     private List<Group> getGroups(Collection<Student> students, Comparator<Student> studentByNameComparator) {
@@ -53,13 +50,14 @@ public class StudentDB implements AdvancedStudentGroupQuery {
                 .collect(Collectors.toList());
     }
 
+    private <V> String maxWithComp(Stream<Map.Entry<String, V>> stream, Comparator<? super Map.Entry<String, V>> comp) {
+        return stream.max(comp).map(Map.Entry::getKey).orElse("");
+    }
+
     private String getLargestGroupBy(Stream<Map.Entry<String, List<Student>>> groups,
                                      Comparator<List<Student>> comparator) {
-        return groups
-                .max(Map.Entry.<String, List<Student>>comparingByValue(comparator)
-                        .thenComparing(Map.Entry.comparingByKey(Collections.reverseOrder(String::compareTo))))
-                .map(Map.Entry::getKey)
-                .orElse("");
+        return maxWithComp(groups, Map.Entry.<String, List<Student>>comparingByValue(comparator)
+                .thenComparing(Map.Entry.comparingByKey(Collections.reverseOrder(String::compareTo))));
     }
 
     private Stream<Map.Entry<String, List<Student>>> streamToGroup(Stream<Student> students) {
@@ -91,8 +89,10 @@ public class StudentDB implements AdvancedStudentGroupQuery {
 
     @Override
     public String getLargestGroupFirstName(Collection<Student> students) {
-        return getLargestGroupBy(streamToGroup(students.stream()),
-                Comparator.comparingInt(list -> getDistinctFirstNames(list).size()));
+        return maxWithComp(collectionToEntrySetStream(students, Student::getGroup,
+                Collectors.mapping(Student::getFirstName, Collectors.collectingAndThen(Collectors.toSet(), Set::size))),
+                Map.Entry.<String, Integer>comparingByValue().
+                        thenComparing(Map.Entry.<String, Integer>comparingByKey().reversed()));
     }
 
     @Override
@@ -112,7 +112,7 @@ public class StudentDB implements AdvancedStudentGroupQuery {
 
     @Override
     public List<String> getFullNames(List<Student> students) {
-        return mapToList(students, s -> s.getFirstName() + " " + s.getLastName());
+        return mapToList(students, this::fullName);
     }
 
     @Override
@@ -132,63 +132,74 @@ public class StudentDB implements AdvancedStudentGroupQuery {
 
     @Override
     public List<Student> sortStudentsByName(Collection<Student> students) {
-        return sortToListBy(students, Comparator.comparing(Student::getLastName).
-                thenComparing(Student::getFirstName).thenComparing(Student::getId));
+        return sortToListBy(students, STUDENT_BY_NAME_COMPARATOR);
+    }
+
+    private <T, V> Predicate<T> resultEqualsTo(Function<T, V> function, V value) {
+        return student -> Objects.equals(function.apply(student), value);
     }
 
     @Override
     public List<Student> findStudentsByFirstName(Collection<Student> students, String name) {
-        return filterAndSort(students, s -> s.getFirstName().equals(name));
+        return filterAndSortByName(students, resultEqualsTo(Student::getFirstName, name));
     }
 
     @Override
     public List<Student> findStudentsByLastName(Collection<Student> students, String name) {
-        return filterAndSort(students, s -> s.getLastName().equals(name));
+        return filterAndSortByName(students, resultEqualsTo(Student::getLastName, name));
     }
 
     @Override
     public List<Student> findStudentsByGroup(Collection<Student> students, String group) {
-        return filterAndSort(students, (s -> s.getGroup().equals(group)));
+        return filterAndSortByName(students, resultEqualsTo(Student::getGroup, group));
     }
 
     @Override
     public Map<String, String> findStudentNamesByGroup(Collection<Student> students, String group) {
-        return filterToStream(students.stream(), student -> student.getGroup().equals(group)).
+        return students.stream().filter(resultEqualsTo(Student::getGroup, group)).
                 collect(Collectors.toMap(Student::getLastName, Student::getFirstName,
                         BinaryOperator.minBy(String::compareTo)));
     }
 
-    @Override
-    public String getMostPopularName(Collection<Student> students) {
-        return students.stream().collect(Collectors.groupingBy(this::fullName,
-                Collectors.mapping(Student::getGroup, Collectors.toSet())))
-                .entrySet().stream().max(Map.Entry.<String, Set<String>>comparingByValue(
-                        Comparator.comparingInt(Set::size))
-                        .thenComparing(Map.Entry.comparingByKey(String::compareTo)))
-                .map(Map.Entry::getKey).orElse("");
+    private <K, V> Stream<Map.Entry<K, V>> collectionToEntrySetStream(
+            Collection<Student> students, Function<Student, K> func, Collector<Student, ?, V> collector) {
+        return students.stream().collect(Collectors.groupingBy(func, collector)).entrySet().stream();
     }
 
-    private <T>  List<T> indicesToList(List<T> names, int[] indices) {
+    @Override
+    public String getMostPopularName(Collection<Student> students) {
+        return maxWithComp(collectionToEntrySetStream(students,
+                this::fullName,
+                Collectors.mapping(Student::getGroup, Collectors.toSet())),
+                Map.Entry.<String, Set<String>>comparingByValue(Comparator.comparingInt(Set::size))
+                        .thenComparing(Map.Entry.comparingByKey(String::compareTo)));
+    }
+
+    private <T> List<T> indicesToList(List<T> names, int[] indices) {
         return Arrays.stream(indices).mapToObj(names::get).collect(Collectors.toList());
+    }
+
+    private List<String> getByIndices(Collection<Student> students, int[] indices, Function<Student, String> function) {
+        return mapToList(indicesToList(List.copyOf(students), indices), function);
     }
 
     @Override
     public List<String> getFirstNames(Collection<Student> students, int[] indices) {
-        return indicesToList(mapToList(students, Student::getFirstName), indices);
+        return getByIndices(students, indices, Student::getFirstName);
     }
 
     @Override
     public List<String> getLastNames(Collection<Student> students, int[] indices) {
-        return indicesToList(mapToList(students, Student::getLastName), indices);
+        return getByIndices(students, indices, Student::getLastName);
     }
 
     @Override
     public List<String> getGroups(Collection<Student> students, int[] indices) {
-        return indicesToList(mapToList(students, Student::getGroup), indices);
+        return getByIndices(students, indices, Student::getGroup);
     }
 
     @Override
     public List<String> getFullNames(Collection<Student> students, int[] indices) {
-        return indicesToList(mapToList(students, this::fullName), indices);
+        return getByIndices(students, indices, this::fullName);
     }
 }
