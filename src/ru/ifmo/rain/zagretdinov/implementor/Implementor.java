@@ -2,327 +2,85 @@ package ru.ifmo.rain.zagretdinov.implementor;
 
 import info.kgeorgiy.java.advanced.implementor.Impler;
 import info.kgeorgiy.java.advanced.implementor.ImplerException;
-import info.kgeorgiy.java.advanced.implementor.JarImpler;
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
-import java.io.File;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.nio.file.*;
+
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.*;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Function;
-import java.util.jar.Attributes;
-import java.util.jar.JarOutputStream;
-import java.util.jar.Manifest;
 import java.util.stream.Collectors;
-import java.util.zip.ZipEntry;
 
 /**
- * Class implements {@link JarImpler}. Provides methods to implement <code>.java/.jar</code> files
+ * Class implements {@link Impler}. Provides methods to implement {@code .java} files
  * from given class or interface.
  *
  * @author sem
  * @version 1.0
  */
-public class Implementor implements Impler, JarImpler {
-
+public class Implementor implements Impler {
+    // :NOTE: Константы? //DONE
     /**
-     * Tabulation for generated class.
+     * Tabulation constant for generated class.
      */
-    private final String TAB = "\t";
+    private static final String TAB = "\t";
 
     /**
-     * Space for generated class.
+     * Space constant for generated class.
      */
-    private final String SPACE = " ";
+    private static final String SPACE = " ";
 
     /**
-     * Line-separator for generated class.
+     * Line-separator constant for generated class.
      */
-    private final String LINE_SEP = System.lineSeparator();
+    private static final String LINE_SEP = System.lineSeparator();
 
     /**
-     * Separator for tokens in generated class.
+     * Separator constant for tokens in generated class.
      */
-    private final String COLLECTION_SEPARATOR = ", ";
+    private static final String COLLECTION_SEPARATOR = ", ";
 
     /**
-     * Separator for operations in generated class.
-     */
-    private final String OPER_SEP = ";";
-
-    /**
-     * Opening brace in generated class.
-     */
-    private final String BLOCK_BEGIN = "{";
-
-    /**
-     * Closing brace in generated class.
-     */
-    private final String BLOCK_END = "}";
-
-    /**
-     * Opening bracket in generated class.
-     */
-    private final String BRACKET_OPEN = "(";
-
-    /**
-     * Closing bracket in generated class.
-     */
-    private final String BRACKET_END = ")";
-
-    /**
-     * Function used to determine whether generate <code>.jar</code> or <code>.java</code> file.
-     * Continues working with {@link Implementor} in two different scenarios:
-     * <ul>
-     * <li> 2 arguments <code>className outputPath</code>: creates <code>.java</code> file executing
-     * method {@link #implement(Class, Path)} provided by interface {@link Impler} </li>
-     * <li> 3 arguments <code>-jar className outputPath</code>: creates <code>.jar</code> file executing
-     *      * method {@link #implementJar(Class, Path)} provided by interface {@link JarImpler} </li>
-     * </ul>
+     * Function used to determine whether generate {@code .jar} or {@code .java} file.
+     * Continues working with {@link Implementor} in scenarios:
+     * 2 arguments {@code className outputPath}: creates {@code .java} file executing
+     * method {@link #implement(Class, Path)} provided by interface {@link Impler}
      * Arguments should not be null. If input is incorrect or an error happens during executing
      * message is printed and execution is aborted.
-     * @param args console line arguments: <code>[-jar] className outputPath</code>
+     *
+     * @param args console line arguments: {@code [-jar] className outputPath}
      */
-    public static void main(String[] args) {
-        if (args == null || args.length < 2 || args.length > 3) {
-            System.err.println("Invalid arguments number, expected [-jar] <class.name> <output.path>");
+    public static void main(final String[] args) {
+        if (args == null || args.length != 2) {
+            System.err.println("Invalid arguments number, expected <class.name> <output.path>");
         } else {
-            for (String arg : args) {
+            for (final String arg : args) {
                 if (arg == null) {
                     System.err.println("All arguments should be not null");
                     return;
                 }
             }
             try {
-                if (args.length == 2) {
-                    new Implementor().implement(Class.forName(args[0]), Path.of(args[1]));
-                } else if (args[0].equals("-jar") || args[0].equals("--jar")) {
-                    new Implementor().implementJar(Class.forName(args[1]), Path.of(args[2]));
-                } else {
-                    System.err.println("expected -jar or --jar");
-                }
-            } catch (ClassNotFoundException e) {
+                new Implementor().implement(Class.forName(args[0]), Path.of(args[1]));
+            } catch (final ClassNotFoundException e) {
                 System.err.println("Invalid class name given: " + e.getMessage());
-            } catch (InvalidPathException e) {
+            } catch (final InvalidPathException e) {
                 System.err.println("Invalid path given: " + e.getMessage());
             } catch (ImplerException e) {
-                System.err.println("Error while creating " +
-                        ((args.length == 2) ? "java" : "jar") + " file " + e.getMessage());
+                System.err.println(e.getMessage());
             }
         }
     }
 
     /**
-     * Joins mapped elements with given delimiter. Maps each element to {@link String}
-     * and concatenates them with delimiter.
-     *
-     * @param delimiter {@link String} separating given elements.
-     * @param elements array of values to be mapped to {@link String}s and joined together.
-     * @param function transforming to {@link String} function.
-     * @param <T> type of elements given
-     * @return a {@link String} containing concatenated with {@code delimiter} mapped {@code elements}.
-     */
-    private <T> String elementsToString(String delimiter, T[] elements, Function<T, String> function) {
-        return Arrays.stream(elements).map(function).collect(Collectors.joining(delimiter));
-    }
-
-    /**
-     *  Joins mapped elements. Maps each element to {@link String}
-     *  and concatenates them with delimiter {@link #COLLECTION_SEPARATOR}.
-     * @param items array of values to be mapped to {@link String}s and joined together.
-     * @param transform transforming to {@link String} function.
-     * @param <T> type of elements given
-     * @return a {@link String} containing concatenated with
-     * {@link #COLLECTION_SEPARATOR} mapped {@code elements}.
-     */
-    private <T> String elementsInCollectionToString(T[] items, Function<T, String> transform) {
-        return elementsToString(COLLECTION_SEPARATOR, items, transform);
-    }
-
-    /**
-     * Joins elements with {@link #SPACE} with braces around.
-     * @param parts array of values to be joined together.
-     * @return a string containing {@link #BRACKET_OPEN}, {@link #LINE_SEP}, elements joined together
-     * with {@link #SPACE}, {@link #LINE_SEP}, {@link #BRACKET_END}.
-     */
-    private String elementsInBrackets(String... parts) {
-        return elementsLineSeparated(BRACKET_OPEN, String.join(SPACE, parts), BRACKET_END);
-    }
-
-    /**
-     * Joins elements with {@link #SPACE}.
-     * @param parts array of values to be joined together.
-     * @return a string containing elements joined together
-     *      * with {@link #SPACE}.
-     */
-    private String elementsSpaced(String... parts) {
-        return String.join(SPACE, parts);
-    }
-
-    /**
-     * Joins elements with {@link #LINE_SEP}.
-     * @param blocks array of values to be joined together.
-     * @return a string containing elements joined together
-     * with {@link #LINE_SEP}, string ends with additional {@link #LINE_SEP}.
-     */
-    private String elementsLineSeparated(String... blocks) {
-        return String.join(LINE_SEP, blocks) + LINE_SEP;
-    }
-
-    /**
-     * Joins elements with {@link #LINE_SEP}.
-     * @param cnt amount of {@link #TAB} to be written.
-     * @return a string containing {@link #TAB} given {@link Integer} times.
-     */
-    private String Tabs(int cnt) {
-        return TAB.repeat(Math.max(0, cnt));
-    }
-
-    /**
-     * Writes a package info in generated class.
-     * @param items {@link String} package info.
-     * @return <code>""</code> if there is no package otherwise <code>package</code> with package name
-     * ending with {@link #OPER_SEP}
-     */
-    private String emptyOrPrefix(String items) {
-        if (!"".equals(items)) {
-            return elementsSpaced("package", items) + OPER_SEP;
-        }
-        return "";
-    }
-
-    //TODO
-    /**
-     *
-     * @param token
-     * @return
-     */
-    private String getFilePath(Class<?> token) {
-        return token.getPackageName().replace('.', File.separatorChar);
-    }
-
-    /** Name for a generated class. methods gets a name for a given class or interface
-     * and appends it with "Impl" suffix.
-     * @param token given classname
-     * @return {@link String} for a generated class extending or implemented given one.
-     */
-    private static String getClassName(Class<?> token) {
-        return token.getSimpleName() + "Impl";
-    }
-
-    /** Function used to create a compiled <code>.jar</code> file implementing methods in given class or interface.
-     *  Uses {@link #compileClass(Class, Path)} to compile a file, {@link #implement(Class, Path)}
-     *  to implement {@code token} class in location specified by {@code jarFile}.
-     * @param token type token to create implementation for.
-     * @param jarFile target future <tt>.jar</tt> file.
-     * @throws ImplerException if {@link Class} or {@link Path} is null.
-     */
-    @Override
-    public void implementJar(Class<?> token, Path jarFile) throws ImplerException {
-        if (token == null || jarFile == null) {
-            throw new ImplerException("");
-        }
-        ImplementorFileUtils.createDirectoriesTo(jarFile.normalize());
-        ImplementorFileUtils utils = new ImplementorFileUtils(jarFile.toAbsolutePath().getParent());
-        try {
-            implement(token, utils.getTempDirectory());
-            compileClass(token, utils.getTempDirectory());
-            buildJar(jarFile, utils.getTempDirectory(), token);
-        } finally {
-            utils.cleanTempDirectory();
-        }
-    }
-
-    /**
-     * Method for compiling created <code>.jar</code> file. Finds a {@link JavaCompiler},
-     * runs it with a command to compile generated class.
-     * @param token type token to create implementation for.
-     * @param tempDirectory {@link Path} for a temporary directory used for creating a compiled
-     * <code>.jar</code> class.
-     * @throws ImplerException if {@link JavaCompiler} could not be find or it could not be run.
-     */
-    private void compileClass(Class<?> token, Path tempDirectory) throws ImplerException {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            throw new ImplerException("Can not find java compiler");
-        }
-        String[] cmdArgs = new String[] {
-                "-cp",
-                tempDirectory.toString() + File.pathSeparator + System.getProperty("java.class.path"),
-                Path.of(tempDirectory.toString(), getFilePath(token), getClassName(token) +
-                        ".java").toString()
-        };
-        if (compiler.run(null, null, null, cmdArgs) != 0) {
-            throw new ImplerException("Can not compile generated code");
-        }
-    }
-
-    /** Creates a <code>.jar</code> file containing implementation for a given class or interface.
-     * Creates a {@link Manifest} for an <code>.jar</code> file.
-     * @param jarFile target <tt>.jar</tt> file.
-     * @param tempDirectory {@link Path} for a temporary directory used for building a compiled
-     * <code>.jar</code> class.
-     * @param token {@link Class} token to create implementation for.
-     * @throws ImplerException if {@link JarOutputStream} could not be created.
-     */
-    private void buildJar(Path jarFile, Path tempDirectory, Class<?> token) throws ImplerException {
-        Manifest manifest = new Manifest();
-        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
-
-        try (JarOutputStream stream = new JarOutputStream(Files.newOutputStream(jarFile), manifest)) {
-            String pathSuffix = token.getName().replace('.', '/') + "Impl.class";
-            stream.putNextEntry(new ZipEntry(pathSuffix));
-            Files.copy(Paths.get(tempDirectory.toString(), pathSuffix), stream);
-        } catch (IOException e) {
-            throw new ImplerException(e.getMessage());
-        }
-    }
-
-    /** Function used to create a <code>.java</code> file implementing methods in given class or interface.
-     *  to implement {@code token} class in location specified by {@code root}.
-     * @param token type token to create implementation for.
-     * @param root target future <tt>.jar</tt> file.
-     * @throws ImplerException if {@link Path} is incorrect, could not create parent directories for a path
-     * or {@link BufferedWriter} could not be created.
-     */
-    @Override
-    public void implement(Class<?> token, Path root) throws ImplerException {
-        Path place = null;
-        try {
-            place = Path.of(root.toString(), getFilePath(token),
-                    getClassName(token) + ".java");
-            Files.createDirectories(place.getParent());
-        } catch (InvalidPathException e) {
-            throw new ImplerException("Wrong path");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        if (token.isPrimitive() || token.isArray() ||
-                Modifier.isFinal(token.getModifiers()) || token == Enum.class) {
-            throw new ImplerException("Unsupported token given");
-        }
-        String extendsOrImplements = token.isInterface() ? "implements" : "extends";
-        try (BufferedWriter bufferedWriter = Files.newBufferedWriter(place)) {
-            bufferedWriter.write(elementsLineSeparated(emptyOrPrefix(token.getPackageName())
-                    , elementsSpaced(getClassModifiers(token),
-                            "class", getClassName(token), extendsOrImplements,
-                            token.getCanonicalName(), BLOCK_BEGIN)));
-            allWork(token, bufferedWriter);
-            bufferedWriter.write(BLOCK_END);
-        } catch (IOException e) {
-            throw new ImplerException("Error with writing class code");
-        }
-    }
-
-    /** Returns default value for a given class.
+     * Returns default value for a given class. returns value based on default value of a given {@link Class}
      * @param clazz default value for which should be returned
      * @return {@link String} containing default value for a given {@link Class}
      */
-    private String getDefaultValue(Class<?> clazz) {
+    private String getDefaultValue(final Class<?> clazz) {
         if (!clazz.isPrimitive()) {
             return "null";
         } else if (clazz.equals(void.class)) {
@@ -334,130 +92,363 @@ public class Implementor implements Impler, JarImpler {
         }
     }
 
-    //TODO
-    /** Writes methods which override parent's ones.
-     * @param methodsHashed {@link Set} to check whether this method was worked with before
-     * @param methods of given class
-     * @param modifier1 modifier for a {@link Class}
-     * @param modifier2 modifier for a {@link Class}
-     * @param bufferedWriter for writing methods body in generated class
+    /**
+     * Writes a string with collection of exceptions. Prepends with "throws" and  and appends with {@link #SPACE}
+     * if at least one {@link Exception} could be thrown from given {@link Executable}.
+     * @param executable given {@link Executable}
+     * @return {@link String} containing collection of {@link Exception}s, separated by {@link #COLLECTION_SEPARATOR}
      */
-    private void methodWalker(Set<Integer> methodsHashed, Method[] methods, int modifier1, int modifier2,
-                              BufferedWriter bufferedWriter) {
-        Arrays.stream(methods).forEach(method -> {
-            StringBuilder hashing = new StringBuilder();
-            hashing.append(method.getReturnType().toString());
-            for (Class<?> m : method.getParameterTypes()) {
-                hashing.append(m.getCanonicalName());
-            }
-            int hash = hashing.hashCode();
-            if (methodsHashed.add(hash)) {
-                if ((method.getModifiers() & modifier1) != 0
-                        && (method.getModifiers() & modifier2) != 0) {
-                    methodWalk(method, bufferedWriter);
-                }
-            }
-        });
+    private String exceptionsOfExecutable(final Executable executable) {
+        return emptyOrPrefix("throws", collectionTransformedElements(executable.getExceptionTypes(),
+                Class::getCanonicalName), SPACE);
     }
 
-    /** Class for creating constructors parameters. It contains one {@link Integer} field which can be
-     * incremented.
+    /**
+     * returns enumeration of items separated by {@code System.lineSeparator()} prepended with {@link String}
+     * prefix and appended with {@link String} delimiter.
+     * @param prefix {@link String} which prepends items
+     * @param items {@link String} string which has prefix and postfix
+     * @param delimiter {@link String} which appends items
+     * @return empty {@link String} if {@code items} are empty, otherwise returns concatenated string.
      */
-    private class Indices {
-        int index = 1;
-
-        /**Increments {@code index} value by one and its previous value.
-         * @return {@code index} value.
-         */
-        Integer add() {
-            return index++;
+    private String emptyOrPrefix(final String prefix, final String items, final String delimiter) {
+        if (!items.isEmpty()) {
+            return elementsSeparated(System.lineSeparator(), prefix, items) + delimiter;
         }
+        return "";
     }
 
-    private void allWork(Class<?> token, BufferedWriter bufferedWriter) throws ImplerException {
-        if (!token.isInterface()) {
-            List<Constructor<?>> constructors = Arrays.stream(token.getDeclaredConstructors())
-                    .filter(c -> !Modifier.isPrivate(c.getModifiers()))
-                    .collect(Collectors.toList());
-            if (constructors.isEmpty()) {
-                throw new ImplerException("Class with no non-private constructors can not be extended");
-            }
-            Arrays.stream(token.getDeclaredConstructors()).forEach(constructor -> {
-                try {
-                    bufferedWriter.write(getMethodBody(constructor, token));
-                } catch (IOException e) {
-                    System.out.println("Error happened while writing constructors code");
-                }
-            });
-        }
-
-        Set<Integer> methodsHashed = new HashSet<>();
-        methodWalker(methodsHashed, token.getMethods(), ~Modifier.STATIC, Modifier.ABSTRACT, bufferedWriter);
-        Class cur = token;
-        while (cur != null) {
-            if (Modifier.isPrivate(cur.getModifiers())) {
-                throw new ImplerException("Private class in hierarchy");
-            }
-            methodWalker(methodsHashed, cur.getDeclaredMethods(),
-                    Modifier.ABSTRACT, Modifier.PROTECTED, bufferedWriter);
-            cur = cur.getSuperclass();
-        }
-    }
-
-    private void methodWalk(Method method, BufferedWriter bufferedWriter) {
-        try {
-            bufferedWriter.write(getMethodBody(method));
-        } catch (IOException e) {
-            System.out.println("Error happened while writing methods code");
-        }
-    }
-
-    private String getMethodBody(Method method) {
-        return elementsSpaced(elementsLineSeparated(Tabs(1),
-                Tabs(1) + getMethodModifiers(method),
-                method.getReturnType().getCanonicalName(), method.getName(),
-                elementsInBrackets(getParameters(method.getParameterTypes())),
-                getThrowable(method.getExceptionTypes()),
-                BLOCK_BEGIN, Tabs(2) + "return",
-                getDefaultValue(method.getReturnType()) +
-                        OPER_SEP, Tabs(1) + BLOCK_END));
-    }
-
-    private String getMethodBody(Constructor constructor, Class<?> token) {
-        return elementsSpaced(elementsLineSeparated(Tabs(1) + getClassName(token) +
-                        elementsInBrackets(getParameters(constructor.getParameterTypes())),
-                getThrowable(constructor.getExceptionTypes()) +
-                        BLOCK_BEGIN, Tabs(2) + "super" +
-                        elementsInBrackets(getParametersNumbers(constructor.getParameterTypes()))
-                        + OPER_SEP, BLOCK_END));
-    }
-
-    private String getThrowable(Class[] exceptionTypes) {
-        return exceptionTypes.length == 0 ? "" : "throws " +
-                elementsToString(COLLECTION_SEPARATOR, exceptionTypes, Class::getName);
-    }
-
-    private String getParameters(Class[] parameterTypes) {
-        Indices indices = new Indices();
-        return parameterTypes.length == 0 ? "" :
-                elementsInCollectionToString(parameterTypes,
-                        parameter -> elementsSpaced(parameter.getCanonicalName(), "_" + indices.add()));
-    }
-
-    private String getParametersNumbers(Class[] parameterTypes) {
-        Indices indices = new Indices();
-        return parameterTypes.length == 0 ? "" :
-                elementsInCollectionToString(parameterTypes, parameter -> elementsSpaced("_" + indices.add()));
-    }
-
-    private String getClassModifiers(Class<?> token) {
+    /**
+     * Writes class modifiers. Gets {@link Modifier} of {@link Class} and writes a string containing all of them
+     * excluding {@code Modifier.ABSTRACT}, {@code Modifier.INTERFACE}, {@code Modifier.STATIC}
+     * and {@code Modifier.PROTECTED}
+     * @param token {@link Class} modifiers of which are expected in return.
+     * @return {@link String} containing modifiers of a given method excluding {@code Modifier.ABSTRACT},
+     * {@code Modifier.INTERFACE}, {@code Modifier.STATIC} and {@code Modifier.PROTECTED}
+     */
+    private String getClassModifiers(final Class<?> token) {
         return Modifier.toString(token.getModifiers() & ~Modifier.ABSTRACT &
                 ~Modifier.INTERFACE & ~Modifier.STATIC & ~Modifier.PROTECTED);
     }
 
-    private String getMethodModifiers(Method m) {
+    /**
+     * Concatenates given not-null strings separated by {@code delimiter}. Preliminarily filters only {@link String}s,
+     * which are not empty.
+     * @param delimiter string used to join {@code parts}
+     * @param parts strings to concatenate.
+     * @return {@link String} consisting of concatenated given strings joined by given delimiter.
+     */
+    private String elementsSeparated(final String delimiter, final String... parts) {
+        return Arrays.stream(parts).filter(s -> !"".equals(s)).collect(Collectors.joining(delimiter));
+    }
+
+    /**
+     * Writes to generated class body of a given method. Writes its modifiers using {@link #getMethodModifiers(Method)},
+     * its name, parameters using {@link #getParameters(Executable)}, throwable using
+     * {@link #exceptionsOfExecutable(Executable)} and a block with {@link #getDefaultValue(Class)}.
+     * @param method target method.
+     * @return {@link String} consisting of body of a given method.
+     */
+    private String getMethodBody(final Method method) {
+        return elementsSpaced(elementsLineSeparated(tabs(1),
+                tabs(1) + getMethodModifiers(method),
+                method.getReturnType().getCanonicalName(), method.getName(),
+                getParameters(method),
+                exceptionsOfExecutable(method),
+                "{", tabs(2) + "return",
+                getDefaultValue(method.getReturnType()) + ";", tabs(1) + "}"));
+    }
+
+    /**
+     * Inner class of {@link Implementor} which provides methods to put {@link Method} in a {@link HashSet} or
+     * {@link HashMap}. Class needed to filter methods on the hierarchy of a given {@link Class} to {@link Implementor}.
+     */
+    private class HashableMethod {
+        /**
+         * Link on a {@link Method} this instance of {@link HashableMethod} is based on.
+         */
+        private final Method method;
+
+        /**
+         * Default constructor. Creates new instance of {@link HashableMethod} out of
+         * given {@link Method} class using {@code super()}
+         * @param method given {@link Method}
+         */
+        HashableMethod(final Method method) {
+            this.method = method;
+        }
+
+        /**
+         * Getter for a private field {@code method}.
+         * @return field of this instance of {@link HashableMethod}
+         */
+        Method get() {
+            return method;
+        }
+
+        /**
+         * Hashcode for an instance of {@link HashableMethod}.
+         * @return {@link Integer} hashcode for an instance of {@link HashableMethod}.
+         */
+        @Override
+        public int hashCode() {
+            final int BASE = 1000000007;
+            final int PRIME = 31;
+            return ((method.getName().hashCode() +
+                    PRIME * Arrays.hashCode(method.getParameterTypes())) % BASE +
+                    (PRIME * PRIME) % BASE * method.getReturnType().hashCode()) % BASE;
+        }
+
+        /**
+         * Checks whether hashcode of field {@code method} is equal to a hashcode of a given {@link Object}
+         * @param obj {@link Object} which hashcode is to compare.
+         * @return {@code true} if hashcodes are equal and {@code false} otherwise.
+         */
+        @Override
+        public boolean equals(final Object obj) {
+            if (obj instanceof HashableMethod) {
+                final HashableMethod hm = (HashableMethod) obj;
+                return method.getName().equals(hm.method.getName()) &&
+                        Arrays.equals(method.getParameterTypes(), hm.method.getParameterTypes()) &&
+                        method.getReturnType().equals(hm.method.getReturnType());
+            }
+            return false;
+        }
+    }
+
+
+    /**
+     * return {@link String} of methods of {@code token} but only non-private
+     * separated by lineSeparator
+     * @param token instance of {@link Class}
+     * @return {@link String} of methods of {@code token}
+     * @throws ImplerException if a given class is private.
+     */
+    private String getMethods(Class<?> token) throws ImplerException {
+        final Set<HashableMethod> methods = new HashSet<>();
+        Arrays.stream(token.getMethods()).map(HashableMethod::new).forEach(methods::add);
+        if (Modifier.isPrivate(token.getModifiers())) {
+            throw new ImplerException("Can't override private class");
+        }
+        while (token != null) {
+            Arrays.stream(token.getDeclaredMethods()).map(HashableMethod::new).forEach(methods::add);
+            token = token.getSuperclass();
+        }
+        return methods.stream().filter(a -> Modifier.isAbstract(a.get().getModifiers()))
+                .map(a -> getMethodBody(a.get())).collect(Collectors.joining(System.lineSeparator()));
+    }
+
+    /**
+     * Writes method modifiers. Gets {@link Modifier} of {@link Method} and writes a string containing all of them
+     * excluding {@code Modifier.ABSTRACT} and {@code Modifier.TRANSIENT}
+     *
+     * @param m methods modifiers of which are expected in return.
+     * @return {@link String} containing modifiers of a given method excluding {@code Modifier.ABSTRACT} and
+     * {@code Modifier.TRANSIENT}
+     */
+    private String getMethodModifiers(final Method m) {
         return Modifier.toString(m.getModifiers() & ~Modifier.ABSTRACT & ~Modifier.TRANSIENT);
     }
 
-}
+    /**
+     * Joins elements with {@link #LINE_SEP}.
+     *
+     * @param cnt amount of {@link #TAB} to be written.
+     * @return a string containing {@link #TAB} given {@link Integer} times.
+     */
+    // :NOTE: Метод с большой буквы //DONE
+    private String tabs(final int cnt) {
+        return TAB.repeat(Math.max(0, cnt));
+    }
 
+    /**
+     * return {@link String} of constructors of {@code token}  but only non-private
+     * separated by lineSeparator
+     * @param token instance of {@link Class}
+     * @return {@link String} of constructors of {@code token}
+     * @throws ImplerException if all constructors are private, or there are no constructors.
+     */
+    private String getConstructors(final Class<?> token) throws ImplerException {
+        if (!token.isInterface()) {
+            final Optional<Constructor<?>> constructors = Arrays.stream(token.getDeclaredConstructors())
+                    .filter(c -> !Modifier.isPrivate(c.getModifiers())).findAny();
+            if (constructors.isEmpty()) {
+                throw new ImplerException("Class with no non-private constructors is not extendable");
+            }
+            return constructors.stream()
+                    .map(a -> getConstructorBody(a, token))
+                    .collect(Collectors.joining(System.lineSeparator()));
+        } else {
+            return "";
+        }
+    }
+
+
+    /**
+     * Produces a {@link String} of parameters and/or unique identifiers for them. Creates a {@link String} consisting
+     * of separated results of functions to each element with unique names..
+     * @param executable method/constructor which parameter types to be given unique identifiers.
+     * @param function to get {@link String} from each element
+     * @return {@link String} containing collection of results of {@link Function} bounded by brackets
+     * to given {@link Array} of elements
+     * with unique names to each element.
+     */
+    private String parameterIdentifiers(final Executable executable, Function<Parameter, String> function) {
+        return Arrays.stream(executable.getParameters())
+                .map(function)
+                .collect(Collectors.joining(", ", "(", ")"));
+    }
+
+    /**
+     * Produces a {@link String} of method parameters. Uses {@link #parameterIdentifiers(Executable, Function)} )}
+     * to get different identifier to the instance of each parameter
+     * @param executable method/constructor which parameter types to be given unique identifiers.
+     * @return {@link String} containing collection of pairs consisting of parameter type, {{@link #SPACE},}
+     * unique identifier, separated by {@link #COLLECTION_SEPARATOR}
+     */
+    private String getParameters(final Executable executable) {
+        return parameterIdentifiers(executable, parameter -> parameter.getType().getCanonicalName()
+                + SPACE + parameter.getName());
+    }
+
+    /**
+     * Produces a {@link String} of method parameters identifiers. Uses
+     * {@link #parameterIdentifiers(Executable, Function)}
+     * to get different identifier to the instance of each parameter
+     * @param executable method/constructor which parameter types of is needed
+     * @return {@link String} containing collection of  separated by {@link #SPACE}
+     */
+    private String getParametersNumbers(final Executable executable) {
+        return parameterIdentifiers(executable, Parameter::getName);
+    }
+
+    /**
+     * Transforms given array of elements to strings and concatenated them with a delimiter.
+     * @param elements given elements to be transformed and concatenated.
+     * @param transform {@link Function} from type of elements to {@link String}
+     * @param <T> type of elements given
+     * @return {@link String} containing concatenated transformed to {@link String} array of elements separated by
+     * {@link #COLLECTION_SEPARATOR}
+     */
+    private <T> String collectionTransformedElements(final T[] elements, final Function<T, String> transform) {
+        return Arrays.stream(elements).map(transform).collect(Collectors.joining(COLLECTION_SEPARATOR));
+    }
+
+    /**
+     * Writes implementation for a given constructor.
+     * @param constructor for which implementation is written
+     * @param token       for which implementation is written
+     * @return {@link String} containing implementation for a {@link Constructor} in generated class.
+     */
+    private String getConstructorBody(final Constructor constructor, final Class<?> token) {
+        return elementsSpaced(elementsLineSeparated(tabs(1) + getClassName(token) +
+                        getParameters(constructor),
+                exceptionsOfExecutable(constructor) +
+                        "{", tabs(2) + "super" +
+                        getParametersNumbers(constructor)
+                        + ";", "}"));
+    }
+
+    /**
+     * return {@link Class#getSimpleName()} with word "Impl".
+     * used to generate name for implemented class.
+     * @param token instance of {@link Class}
+     * @return String of Simple name for the answer.
+     */
+    String getClassName(final Class<?> token) {
+        return token.getSimpleName() + "Impl";
+    }
+
+    /**
+     * Joins elements with {@link #LINE_SEP}.
+     *
+     * @param blocks array of values to be joined together.
+     * @return a string containing elements joined together
+     * with {@link #LINE_SEP}, string ends with additional {@link #LINE_SEP}.
+     */
+    private String elementsLineSeparated(final String... blocks) {
+        return String.join(LINE_SEP, blocks) + LINE_SEP;
+    }
+
+    /**
+     * Makes a string consisting of code of implementation class.
+     *
+     * @param token class is generating implementation to.
+     * @return {@link String} consisting of source code in generated class.
+     * @throws ImplerException if implementation could not be generated.
+     */
+    private String getFullClass(final Class<?> token) throws ImplerException {
+        final String extendsOrImplements = token.isInterface() ? "implements" : "extends";
+        return elementsSeparated(System.lineSeparator(),
+                emptyOrPrefix("package", token.getPackageName(), ";"),
+                elementsSeparated(" ",  elementsSpaced(getClassModifiers(token),
+                        "class", getClassName(token), extendsOrImplements,
+                        token.getCanonicalName(), "{")),
+                getConstructors(token),
+                getMethods(token),
+                "}");
+    }
+
+    /**
+     * Joins elements with {@link #SPACE}.
+     *
+     * @param parts array of values to be joined together.
+     * @return a string containing elements joined together
+     * * with {@link #SPACE}.
+     */
+    private String elementsSpaced(final String... parts) {
+        return String.join(SPACE, parts);
+    }
+
+    /**
+     * Encodes a given {@link String}.
+     *
+     * @param arg encoding of which is needed
+     * @return {@link String} which is encoded.
+     */
+    private static String encode(final String arg) {
+        final StringBuilder builder = new StringBuilder();
+        for (final char c : arg.toCharArray()) {
+            builder.append(c < 128 ? String.valueOf(c) : String.format("\\u%04x", (int) c));
+        }
+        return builder.toString();
+    }
+
+    /**
+     * Function used to create a {@code .java} file implementing methods in given class or interface.
+     * to implement {@code token} class in location specified by {@code root}.
+     *
+     * @param token type token to create implementation for.
+     * @param root  target future {@code .jar} file.
+     * @throws ImplerException if {@link Path} is incorrect, could not create parent directories for a path
+     *                         or {@link BufferedWriter} could not be created.
+     */
+    @Override
+    public void implement(final Class<?> token, final Path root) throws ImplerException {
+        if (token == null || root == null) {
+            throw new ImplerException("Parameters should not be null");
+        }
+        final Path place;
+        try {
+            place = root.resolve(Path.of(token.getPackageName().replace('.', File.separatorChar),
+                    getClassName(token) + ".java"));
+            Files.createDirectories(place.getParent());
+        } catch (final InvalidPathException | IOException e) {
+            throw new ImplerException("Wrong path");
+        }
+        final int modifiers = token.getModifiers();
+        if (token.isPrimitive()
+                || token.isArray()
+                || Modifier.isFinal(modifiers)
+                || Modifier.isPrivate(modifiers)
+                || token == Enum.class) {
+            throw new ImplerException("Unsupported token given");
+        }
+        try (final BufferedWriter writer = Files.newBufferedWriter(place)) {
+            writer.write(encode(getFullClass(token)));
+        } catch (final IOException e) {
+            throw new ImplerException(e);
+        }
+    }
+
+}
