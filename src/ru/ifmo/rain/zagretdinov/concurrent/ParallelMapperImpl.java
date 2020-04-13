@@ -68,7 +68,6 @@ public class ParallelMapperImpl implements ParallelMapper {
         boolean isEmpty() {
             return counterLists.isEmpty();
         }
-
     }
 
     @Override
