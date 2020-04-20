@@ -12,18 +12,23 @@ public class WebCrawler implements Crawler {
     private final int perHost;
     private final ExecutorService extractorsPool;
     private final ExecutorService downloadersPool;
-    private final ConcurrentMap<String, HostDownloader> hostDownloaders;
+    private final ConcurrentMap<String, HostManager> hosts;
+    private int AWAIT_TERMINATION_TIME = 5;
 
     public WebCrawler(Downloader downloader, int downloaders, int extractors, int perHost) {
         this.downloader = downloader;
         this.perHost = perHost;
         downloadersPool = Executors.newFixedThreadPool(downloaders);
         extractorsPool = Executors.newFixedThreadPool(extractors);
-        hostDownloaders = new ConcurrentHashMap<>();
+        hosts = new ConcurrentHashMap<>();
+    }
+
+    private static int argumentOrDefault(String[] args, int index) {
+        return index >= args.length ? 1 : Integer.parseInt(args[index]);
     }
 
     public static void main(String[] args) {
-        if (args == null || args.length == 0 || Arrays.stream(args).anyMatch(Objects::isNull)) {
+        if (args == null || args.length == 0 || args.length > 5 || Arrays.stream(args).anyMatch(Objects::isNull)) {
             System.err.println("Arguments should not be null");
         } else {
             try {
@@ -31,7 +36,8 @@ public class WebCrawler implements Crawler {
                 int downloaderAmount = argumentOrDefault(args, 2);
                 int extractorAmount = argumentOrDefault(args, 3);
                 int perHost = argumentOrDefault(args, 4);
-                try (Crawler crawler = new WebCrawler(new CachingDownloader(), downloaderAmount, extractorAmount, perHost)) {
+                try (Crawler crawler = new WebCrawler(new CachingDownloader(), downloaderAmount, extractorAmount,
+                        perHost)) {
                     crawler.download(args[0], depth);
 
                 } catch (NumberFormatException e) {
@@ -43,65 +49,70 @@ public class WebCrawler implements Crawler {
         }
     }
 
-    private static int argumentOrDefault(String[] args, int index) {
-        return index >= args.length ? 1 : Integer.parseInt(args[index]);
+    @Override
+    public Result download(String s, int i) {
+        Worker worker = new Worker(s, i);
+        return new Result(worker.getDownloadedSet(), worker.getErrors());
     }
 
-    private class HostDownloader {
-        private final Queue<Runnable> queueTasks;
-
-        private int inProcess;
-
-        HostDownloader() {
-            queueTasks = new ArrayDeque<>();
-            inProcess = 0;
+    @Override
+    public void close() {
+        extractorsPool.shutdown();
+        downloadersPool.shutdown();
+        try {
+            // Await terminations added
+            extractorsPool.awaitTermination(AWAIT_TERMINATION_TIME, TimeUnit.SECONDS);
+            extractorsPool.awaitTermination(AWAIT_TERMINATION_TIME, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
         }
-
-        synchronized void add(Runnable task) {
-            queueTasks.add(task);
-            runAndMarkNext();
-        }
-
-        synchronized private void runAndMarkNext() {
-            if (inProcess < perHost) {
-                Runnable task = queueTasks.poll();
-                if (task != null) {
-                    inProcess++;
-                    downloadersPool.submit(() -> {
-                        try {
-                            task.run();
-                        } finally {
-                            finishAndStartNext();
-                        }
-                    });
-                }
-            }
-        }
-
-        synchronized private void finishAndStartNext() {
-            inProcess--;
-            runAndMarkNext();
-        }
-
     }
 
     private class Worker {
-        private final Set<String> processed = ConcurrentHashMap.newKeySet();
-        private final ConcurrentMap<String, IOException> exceptions = new ConcurrentHashMap<>();
-        private final Set<String> nextLevel = ConcurrentHashMap.newKeySet();
+        private final Set<String> downloadedSet = ConcurrentHashMap.newKeySet();
+        private final Set<String> nextLevelSet = ConcurrentHashMap.newKeySet();
+        private final ConcurrentMap<String, IOException> errors = new ConcurrentHashMap<>();
         private final ConcurrentLinkedQueue<String> awaits = new ConcurrentLinkedQueue<>();
+        private int depth;
 
-        public Worker(String url, int depth) {
+        Worker(String url, int depth) {
             awaits.add(url);
+            this.depth = depth;
+            bfsWork();
+        }
+
+        private void bfsWork() {
             for (int j = 0; j < depth; j++) {
-                final int currentDepth = depth - j;
-                final Phaser level = new Phaser(1);
-                List<String> processing = new ArrayList<>(awaits);
+                final boolean extract = j < depth - 1;
+                final Phaser phaser = new Phaser(1);
+                awaits.stream()
+                        .filter(nextLevelSet::add)
+                        .forEach(page -> queueDownload(page, phaser, extract));
                 awaits.clear();
-                processing.stream()
-                        .filter(nextLevel::add)
-                        .forEach(link -> queueDownload(link, currentDepth, level));
-                level.arriveAndAwaitAdvance();
+                phaser.arriveAndAwaitAdvance();
+            }
+        }
+
+        void queueDownload(final String url, final Phaser level, boolean extract) {
+            try {
+                String host = URLUtils.getHost(url);
+                HostManager manager = hosts.
+                        computeIfAbsent(host, s -> new HostManager());
+                level.register();
+                manager.add(() -> {
+                    try {
+                        Document document = downloader.download(url);
+                        downloadedSet.add(url);
+                        if (extract) {
+                            linksExtraction(document, level);
+                        }
+                    } catch (IOException e) {
+                        errors.put(url, e);
+                    } finally {
+                        level.arrive();
+                    }
+                });
+            } catch (MalformedURLException e) {
+                errors.put(url, e);
             }
         }
 
@@ -111,7 +122,7 @@ public class WebCrawler implements Crawler {
                 try {
                     List<String> links = document.extractLinks();
                     awaits.addAll(links);
-                } catch (IOException ignored) {
+                } catch (IOException e) {
                     // ignore
                 } finally {
                     level.arrive();
@@ -119,47 +130,43 @@ public class WebCrawler implements Crawler {
             });
         }
 
-        void queueDownload(final String url, final int depth, final Phaser level) {
-            String host;
-            try {
-                host = URLUtils.getHost(url);
-            } catch (MalformedURLException e) {
-                exceptions.put(url, e);
-                return;
-            }
-            HostDownloader hostDownloader = hostDownloaders.
-                    computeIfAbsent(host, s -> new HostDownloader());
-            level.register();
-            hostDownloader.add(() -> {
-                try {
-                    Document document = downloader.download(url);
-                    processed.add(url);
-                    if (depth > 1) {
-                        linksExtraction(document, level);
+        List<String> getDownloadedSet() {
+            return new ArrayList<>(downloadedSet);
+        }
+
+        Map<String, IOException> getErrors() {
+            return errors;
+        }
+
+    }
+
+    private class HostManager {
+        private int running;
+        private Queue<Runnable> tasks;
+
+        HostManager() {
+            tasks = new ArrayDeque<>();
+            running = 0;
+        }
+
+        synchronized void add(Runnable task) {
+            tasks.add(task);
+            tryRun();
+        }
+
+        synchronized private void tryRun() {
+            Runnable task;
+            if (perHost > running && (task = tasks.poll()) != null) {
+                running++;
+                downloadersPool.submit(() -> {
+                    try {
+                        task.run();
+                    } finally {
+                        running--;
+                        tryRun();
                     }
-                } catch (IOException e) {
-                    exceptions.put(url, e);
-                } finally {
-                    level.arrive();
-                }
-            });
+                });
+            }
         }
-
-        Result getResult() {
-            return new Result(new ArrayList<>(processed), exceptions);
-        }
-
     }
-
-    @Override
-    public Result download(String s, int i) {
-        return new Worker(s, i).getResult();
-    }
-
-    @Override
-    public void close() {
-        extractorsPool.shutdown();
-        downloadersPool.shutdown();
-    }
-
 }

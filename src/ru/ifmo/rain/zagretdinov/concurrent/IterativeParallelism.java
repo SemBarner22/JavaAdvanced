@@ -16,7 +16,6 @@ import java.util.stream.Stream;
  * @version 1.0.0
  */
 public class IterativeParallelism implements AdvancedIP {
-
     private final ParallelMapper parallelMapper;
 
     /**
@@ -115,21 +114,23 @@ public class IterativeParallelism implements AdvancedIP {
         }
     }
 
-
+    private <T, U> List<U> filterMapUnification(final int threads, final List<? extends T> values,
+                                           final Function<Stream<? extends T>, Stream<? extends U>> transform)
+            throws InterruptedException {
+        return working(threads, values, s -> transform.apply(s).collect(Collectors.toList()),
+                IterativeParallelism::streamOfLists);
+    }
     @Override
     public <T> List<T> filter(final int threads, final List<? extends T> values, final Predicate<? super T> predicate)
             throws InterruptedException {
-        // :NOTE: Унифицировать c map //DONE
-        return working(threads, values, s -> s.filter(predicate).collect(Collectors.toList()),
-                IterativeParallelism::streamOfLists);
+        return filterMapUnification(threads, values, s -> s.filter(predicate));
     }
 
     @Override
     public <T, U> List<U> map(final int threads, final List<? extends T> values,
                               final Function<? super T, ? extends U> f)
             throws InterruptedException {
-        return working(threads, values, s -> s.map(f).collect(Collectors.toList()),
-                IterativeParallelism::streamOfLists);
+        return filterMapUnification(threads, values, s -> s.map(f));
     }
 
     private static <I> List<I> streamOfLists(final Stream<? extends List<? extends I>> streams) {
@@ -179,7 +180,6 @@ public class IterativeParallelism implements AdvancedIP {
     @Override
     public <T, R> R mapReduce(final int threads, final List<T> values, final Function<T, R> lift, final Monoid<R> monoid)
             throws InterruptedException {
-        // :NOTE: копипаста //DONE
         final Function<Stream<T>, R> functionReduce = s -> s.map(lift).reduce(monoid.getIdentity(), monoid.getOperator());
         return working(threads, values, functionReduce, s -> getReducer(s, monoid));
     }

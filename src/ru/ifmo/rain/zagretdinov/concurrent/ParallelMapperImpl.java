@@ -15,7 +15,6 @@ import static java.util.stream.IntStream.range;
  * @version 1.0.0
  */
 public class ParallelMapperImpl implements ParallelMapper {
-
     private final QueueTasks queueTasks;
     private final List<Thread> threadList;
 
@@ -53,19 +52,23 @@ public class ParallelMapperImpl implements ParallelMapper {
             counterLists = new ArrayDeque<>();
         }
 
-        synchronized void add(CounterList<?, ?> value) {
+        synchronized void add(final CounterList<?, ?> value) {
             counterLists.add(value);
             notifyAll();
         }
 
-        synchronized CounterList<?, ?> poll() throws InterruptedException {
+        public synchronized void remove() {
+            counterLists.remove();
+        }
+
+        synchronized Runnable poll() throws InterruptedException {
             while (isEmpty()) {
                 wait();
             }
-            return counterLists.poll();
+            return counterLists.element().poll();
         }
 
-        boolean isEmpty() {
+        private synchronized boolean isEmpty() {
             return counterLists.isEmpty();
         }
     }
@@ -105,14 +108,15 @@ public class ParallelMapperImpl implements ParallelMapper {
     public class CounterList<E, Q> {
         private final List<Q> result;
         private final Deque<Runnable> subtasks;
-        private int remain;
+        private int remain, notStarted;
         private boolean finishes;
         private RuntimeException e = null;
 
         CounterList(Function<? super E, ? extends Q> f, List<? extends E> args) {
             result = new ArrayList<>(Collections.nCopies(args.size(), null));
             subtasks = new ArrayDeque<>();
-            remain = result.size();
+            remain = notStarted = result.size();
+
             finishes = false;
             int idx = 0;
             for (final E value : args) {
@@ -145,7 +149,11 @@ public class ParallelMapperImpl implements ParallelMapper {
             while (subtasks.isEmpty()) {
                 wait();
             }
-            return subtasks.poll();
+            var task = subtasks.poll();
+            if (--notStarted == 0) {
+                queueTasks.remove();
+            }
+            return task;
         }
 
         synchronized void setResult(final int index, Q value) {

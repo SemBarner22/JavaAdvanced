@@ -4,13 +4,20 @@ import java.net.DatagramPacket;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 
-public class Utilities {
+/**
+ * Class providing tools for request generation and {@link DatagramPacket} management.
+ */
+class Utilities {
     static DatagramPacket newPacket(int receiveSize) {
         return new DatagramPacket(new byte[receiveSize], receiveSize);
     }
 
-    static DatagramPacket newPacketFromString(String string, SocketAddress address) {
-        return new DatagramPacket(string.getBytes(StandardCharsets.UTF_8), string.length(), address);
+    static DatagramPacket newPacket(int receiveSize, SocketAddress address) {
+        return new DatagramPacket(new byte[receiveSize], receiveSize, address);
+    }
+
+    static boolean validate(String s, int threadId, int requestId) {
+        return s.matches("[\\D]*" + threadId + "[\\D]*" + requestId + "[\\D]*");
     }
 
     static void setContent(DatagramPacket packet, String s) {
