@@ -22,7 +22,7 @@ public class Client {
             final String bankAccount = passId + ":" + accountId;
             final Bank bank;
             try {
-                bank = (Bank) Naming.lookup("//localhost:2020/bank");
+                bank = (Bank) Naming.lookup("//localhost:1895/bank");
             } catch (final NotBoundException e) {
                 System.out.println("Bank is not bound");
                 return;

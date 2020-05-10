@@ -1,2 +1,2 @@
 #!/bin/bash
-java -cp ../../../../../.. ru/ifmo/rain/zagretdinov/bank/Client sem barner 1234 1 100
+java -cp ../compiled ru/ifmo/rain/zagretdinov/bank/Client sem barner 1234 1 100

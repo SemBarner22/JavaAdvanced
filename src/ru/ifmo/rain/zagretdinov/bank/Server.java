@@ -8,16 +8,17 @@ import java.rmi.server.UnicastRemoteObject;
 
 public class Server {
     private final static int PORT = 8888;
+    static Bank bank;
     public static void main(final String... args) {
         try {
-            LocateRegistry.createRegistry(2020);
+            LocateRegistry.createRegistry(1895);
         } catch (RemoteException e) {
             e.printStackTrace();
         }
-        final Bank bank = new RemoteBank(PORT);
+        bank = new RemoteBank(PORT);
         try {
             UnicastRemoteObject.exportObject(bank, PORT);
-            Naming.rebind("//localhost:2020/bank", bank);
+            Naming.rebind("//localhost:1895/bank", bank);
         } catch (final RemoteException e) {
             System.out.println("Cannot export object: " + e.getMessage());
             e.printStackTrace();

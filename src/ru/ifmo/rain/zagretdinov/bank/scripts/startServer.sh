@@ -1,4 +1,4 @@
 #!/bin/bash
-export CLASSPATH=../../../../..
-#rmiregistry &
-java -cp ../../../../../.. ru/ifmo/rain/zagretdinov/bank/Server
+#export CLASSPATH=../compiled
+#rmiregistry 1895 &
+java -cp ../compiled ru/ifmo/rain/zagretdinov/bank/Server
