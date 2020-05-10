@@ -30,28 +30,35 @@ public class Client {
                 System.out.println("Bank URL is invalid");
                 return;
             }
-            Person person = bank.getRemotePerson(name, surname, passId);
-            System.out.println((person.getAccounts().get(bankAccount) != null ? (((Account) person.getAccounts().get(bankAccount)).getAmount()) : 0));
+            Person person = bank.getRemotePerson(passId);
+            if (person == null) {
+                System.out.println("Creating person");
+                person = bank.createRemotePerson(name, surname, passId);
+            } else {
+                System.out.println("Person already exists");
+            }
+            System.out.println((person.getAccounts().get(bankAccount) != null ?
+                    (((Account) person.getAccounts().get(bankAccount)).getAmount()) : 0));
             person.createAccount(bankAccount);
-            ((Account) person.getAccounts().get(bankAccount)).setAmount(((Account) person.getAccounts().get(bankAccount)).getAmount() + moneyDelta);
-//            System.out.println((person.getAccounts().get(bankAccount) != null ? (((Account) person.getAccounts().get(bankAccount)).getAmount()) : 0));
+            ((Account) person.getAccounts().get(bankAccount)).setAmount(
+                    ((Account) person.getAccounts().get(bankAccount)).getAmount() + moneyDelta);
+            System.out.println((person.getAccounts().get(bankAccount) != null ?
+                    (((Account) person.getAccounts().get(bankAccount)).getAmount()) : 0));
 
-                Account account = bank.getAccount(bankAccount);
-                if (account == null) {
-                    System.out.println("Creating account");
-                    account = bank.createAccount(bankAccount);
-                } else {
-                    System.out.println("Account already exists");
-                }
+            Account account = bank.getAccount(bankAccount);
+            if (account == null) {
+                System.out.println("Creating account");
+                account = bank.createAccount(bankAccount);
+            } else {
+                System.out.println("Account already exists");
+            }
 //            System.out.println("Account id: " + account.getId());
-                System.out.println("Money: " + account.getAmount());
-                System.out.println("Adding money");
-                account.setAmount(account.getAmount() + moneyDelta);
-                System.out.println("Money: " + account.getAmount());
+            System.out.println("Money: " + account.getAmount());
+            System.out.println("Adding money");
+            account.setAmount(account.getAmount() + moneyDelta);
+            System.out.println("Money: " + account.getAmount());
         } catch (NumberFormatException e) {
             System.err.println("Incorrect number format");
-        } catch (ValidateException e) {
-            System.err.println("Wrong credentials");
         }
     }
 }

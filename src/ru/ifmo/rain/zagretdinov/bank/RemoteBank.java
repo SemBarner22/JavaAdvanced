@@ -1,5 +1,4 @@
 package ru.ifmo.rain.zagretdinov.bank;
-
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,47 +13,43 @@ public class RemoteBank implements Bank {
         this.port = port;
     }
 
-    public Person getRemotePerson(final String name, final String surname, final int passId) throws RemoteException, ValidateException {
-        final Person person = new RemotePerson(name, surname, passId, this);
-        if (bankClients.putIfAbsent(passId, person) == null) {
-            UnicastRemoteObject.exportObject(person, port);
-            return bankClients.get(passId);
-        } else {
-            if (person.getName().equals(bankClients.get(passId).getName()) &&
-                    person.getSurname().equals(bankClients.get(passId).getSurname()) &&
-                    person.getPassId() == bankClients.get(passId).getPassId()) {
-                return bankClients.get(passId);
-            }
-            throw new ValidateException();
-        }
+    @Override
+    public Person getRemotePerson(final int passId) {
+        return bankClients.get(passId);
     }
 
-    public Person getLocalPerson(final String name, final String surname, final int passId) throws RemoteException,
-            ValidateException {
-        final LocalPerson person = new LocalPerson(name, surname, passId);
-        final Person person1 = bankClients.get(passId);
-        if (bankClients.putIfAbsent(passId, person) == null) {
+    @Override
+    public synchronized Person getLocalPerson(final int passId) throws RemoteException {
+        Person remotePerson = bankClients.get(passId);
+        if (remotePerson != null) {
+            final Person person = new LocalPerson(remotePerson.getName(), remotePerson.getSurname(), remotePerson.getPassId());
+            var setSubId = remotePerson.getAccounts().keySet();
+            for (var s : setSubId) {
+                Account account = accounts.get(s);
+                person.getAccounts().putIfAbsent(s.toString(), new LocalAccount(account.getId(), account.getAmount()));
+            }
             return person;
-        } else {
-            if (person1 != null) {
-                var setSubId = person1.getAccounts().keySet();
-                for (var s : setSubId) {
-                    Account account = accounts.get(s);
-                    person.accounts.putIfAbsent(s.toString(), new LocalAccount(account.getId(), account.getAmount()));
-                }
-                //person.getAccounts().putIfAbsent(new LocalAccount(ac));
-            }
-
-            if (person.getName().equals(bankClients.get(passId).getName()) &&
-                    person.getSurname().equals(bankClients.get(passId).getSurname()) &&
-                    person.getPassId() == bankClients.get(passId).getPassId()) {
-                // Should be .exportObject?
-                return person;
-            }
-            throw new ValidateException();
         }
+        return null;
     }
 
+    @Override
+    public Person createRemotePerson(final String name, final String surname, final int passId) throws RemoteException {
+        Person person = new RemotePerson(name, surname, passId, this);
+        bankClients.put(passId, person);
+        UnicastRemoteObject.exportObject(person, port);
+        return person;
+    }
+
+    @Override
+    public Person createLocalPerson(String name, String surname, int passId) throws RemoteException {
+        Person person = new RemotePerson(name, surname, passId, this);
+        bankClients.put(passId, person);
+        UnicastRemoteObject.exportObject(person, port);
+        return new LocalPerson(name, surname, passId);
+    }
+
+    @Override
     public Account createAccount(final String id) throws RemoteException {
         System.out.println("Creating account " + id);
         final Account account = new RemoteAccount(id);
@@ -66,18 +61,10 @@ public class RemoteBank implements Bank {
         }
     }
 
-//    public Account createAccount(final Person person, final String id) throws RemoteException {
-//        final Account account = new RemoteAccount(id);
-//        if (accounts.putIfAbsent(id, account) == null) {
-//            UnicastRemoteObject.exportObject(account, port);
-//            return account;
-//        } else {
-//            return getAccount(id);
-//        }
-//    }
-
+    @Override
     public Account getAccount(final String id) {
         System.out.println("Retrieving account " + id);
         return accounts.get(id);
     }
+
 }

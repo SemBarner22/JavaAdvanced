@@ -11,9 +11,9 @@ public interface Bank extends Remote {
      */
     Account createAccount(String id) throws RemoteException;
 
-    Person getRemotePerson(final String name, final String surname, final int passId) throws RemoteException, ValidateException;
+    Person getRemotePerson(final int passId) throws RemoteException;
 
-    Person getLocalPerson(final String name, final String surname, final int passId) throws RemoteException, ValidateException;
+    Person getLocalPerson(final int passId) throws RemoteException;
 
     /**
      * Returns account by identifier.
@@ -21,4 +21,8 @@ public interface Bank extends Remote {
      * @return account with specified identifier or {@code null} if such account does not exists.
      */
     Account getAccount(String id) throws RemoteException;
+
+    Person createRemotePerson(final String name, final String surname, final int passId) throws RemoteException;
+
+    Person createLocalPerson(final String name, final String surname, final int passId) throws RemoteException;
 }
