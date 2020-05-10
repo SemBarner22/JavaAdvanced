@@ -77,20 +77,19 @@ public class ParallelMapperImpl implements ParallelMapper {
     public <T, R> List<R> map(final Function<? super T, ? extends R> f, final List<? extends T> args)
             throws InterruptedException {
         CounterList<T, R> result = new CounterList<>(f, args);
-        queueTasks.add(result);
 
-        if (result.hasErrors()) {
-            throw result.getError();
-        } else {
-            return result.getResult();
+        synchronized (this) {
+            queueTasks.add(result);
         }
+
+        return result.getResult();
     }
 
     @Override
     public void close() {
-        threadList.forEach(Thread::interrupt);
 
         synchronized (this) {
+            threadList.forEach(Thread::interrupt);
             queueTasks.counterLists.forEach(CounterList::finish);
         }
 
@@ -108,41 +107,27 @@ public class ParallelMapperImpl implements ParallelMapper {
     public class CounterList<E, Q> {
         private final List<Q> result;
         private final Deque<Runnable> subtasks;
-        private int remain, notStarted;
+        private int remain, emptyCounterList;
         private boolean finishes;
-        private RuntimeException e = null;
+        private RuntimeException e;
 
         CounterList(Function<? super E, ? extends Q> f, List<? extends E> args) {
             result = new ArrayList<>(Collections.nCopies(args.size(), null));
             subtasks = new ArrayDeque<>();
-            remain = notStarted = result.size();
+            remain = emptyCounterList = result.size();
 
             finishes = false;
             int idx = 0;
             for (final E value : args) {
                 final int index = idx++;
-                synchronized (this) {
-                    Runnable task = () -> {
-                        try {
-                            setResult(index, f.apply(value));
-                        } catch (final RuntimeException e) {
-                            addError(e);
-                        }
-                    };
-                    add(task);
-                }
+                subtasks.add(() -> {
+                    try {
+                        setResult(index, f.apply(value));
+                    } catch (final RuntimeException e) {
+                        addError(e);
+                    }
+                });
             }
-        }
-
-        synchronized void run() throws InterruptedException {
-            while (!subtasks.isEmpty()) {
-                poll().run();
-            }
-        }
-
-        synchronized void add(Runnable value) {
-            subtasks.add(value);
-            notifyAll();
         }
 
         synchronized Runnable poll() throws InterruptedException {
@@ -150,7 +135,7 @@ public class ParallelMapperImpl implements ParallelMapper {
                 wait();
             }
             var task = subtasks.poll();
-            if (--notStarted == 0) {
+            if (--emptyCounterList == 0) {
                 queueTasks.remove();
             }
             return task;
@@ -173,24 +158,26 @@ public class ParallelMapperImpl implements ParallelMapper {
             --remain;
         }
 
-        private synchronized void waitForFinish() throws InterruptedException {
+        private synchronized void finishWaiter() throws InterruptedException {
             while (!finishes) {
                 wait();
             }
         }
 
-        synchronized boolean hasErrors() throws InterruptedException {
-            waitForFinish();
-            return !(e == null);
-        }
-
         public synchronized RuntimeException getError() throws InterruptedException {
-            waitForFinish();
+            finishWaiter();
             return e;
         }
 
         public synchronized List<Q> getResult() throws InterruptedException {
-            waitForFinish();
+            finishWaiter();
+            if (emptyCounterList != 0) {
+                return null;
+            }
+            if (e != null) {
+                throw e;
+            }
+
             return result;
         }
 

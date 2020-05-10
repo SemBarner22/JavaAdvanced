@@ -1,6 +1,5 @@
 package ru.ifmo.rain.zagretdinov.hello;
 
-import info.kgeorgiy.java.advanced.hello.HelloClient;
 import info.kgeorgiy.java.advanced.hello.HelloServer;
 
 import java.io.IOException;
@@ -12,6 +11,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 /**
  * Class - Server implementing {@link HelloServer} interface. Receives and answers on requests in several threads,
@@ -21,23 +21,23 @@ public class HelloUDPServer implements HelloServer {
     private DatagramSocket socket;
     private ExecutorService threadService;
 
-    public static void main(String[] args) {
+    public static void main(final String[] args) {
         if (args == null || args.length != 2 || Arrays.stream(args).anyMatch(Objects::isNull)) {
             System.err.println("Usage: [port], [threads amount]");
             return;
         }
-        try {
-            int port = Integer.parseInt(args[0]);
-            int threads = Integer.parseInt(args[1]);
-            new HelloUDPServer().start(port, threads);
-        } catch (NumberFormatException e) {
+        try (HelloUDPServer server = new HelloUDPServer()){
+            final int port = Integer.parseInt(args[0]);
+            final int threads = Integer.parseInt(args[1]);
+            server.start(port, threads);
+        } catch (final NumberFormatException e) {
             System.err.println("Port and threads amount should be integer");
         }
     }
 
     @Override
-    public void start(int port, int threads) {
-        int size;
+    public void start(final int port, final int threads) {
+        final int size;
         if (port < 0 || threads <= 0) {
             System.err.println("Port and threads amount should be positive");
             return;
@@ -45,27 +45,28 @@ public class HelloUDPServer implements HelloServer {
         try {
             socket = new DatagramSocket(port);
             size = socket.getReceiveBufferSize();
-        } catch (SocketException e) {
+        } catch (final SocketException e) {
             System.out.println("Could not establish a connection " + e.getMessage());
             return;
         }
         threadService = Executors.newFixedThreadPool(threads);
-        for (int i = 0; i < threads; i++) {
-            threadService.submit(() -> {
+        IntStream.range(0, threads).forEach(i -> threadService.submit(() -> {
+            final byte[] buffer = new byte[size];
+            // :NOTE: Переиспользование // Done
+            final DatagramPacket packet = new DatagramPacket(buffer, size);
+            while (!socket.isClosed() && !Thread.currentThread().isInterrupted()) {
                 try {
-                    DatagramPacket packet = Utilities.newPacket(size);
-                    while (!socket.isClosed() && !Thread.currentThread().isInterrupted()) {
-                        socket.receive(packet);
-                        Utilities.setContent(packet, "Hello, " + Utilities.getContent(packet));
-                        socket.send(packet);
-                    }
-                }  catch (IOException e) {
+                    packet.setData(buffer);
+                    socket.receive(packet);
+                    Utilities.setContent(packet, "Hello, " + Utilities.getContent(packet));
+                    socket.send(packet);
+                } catch (final IOException e) {
                     if (!socket.isClosed()) {
                         System.err.println("An error during receiving or sending a message " + e.getMessage());
                     }
                 }
-            });
-        }
+            }
+        }));
     }
 
     @Override
@@ -74,7 +75,7 @@ public class HelloUDPServer implements HelloServer {
         threadService.shutdown();
         try {
             threadService.awaitTermination(1, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
+        } catch (final InterruptedException e) {
             // Ignored
         }
     }

@@ -8,6 +8,7 @@ import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 import java.io.File;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -16,6 +17,8 @@ import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.zip.ZipEntry;
+
+import static ru.ifmo.rain.zagretdinov.implementor.ImplementorUtils.getImplementationPath;
 
 // :NOTE: Использование <code> // DONE
 /**
@@ -77,30 +80,27 @@ public class JarImplementor extends Implementor implements JarImpler {
      * @throws ImplerException if {@link JavaCompiler} could not be find or it could not be run.
      */
     private void compileClass(final Class<?> token, final Path tmpDir) throws ImplerException {
-        final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            throw new ImplerException("Can not find java compiler");
+        final String subPath;
+        try {
+            subPath = Path.of(token.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
+        } catch (URISyntaxException e) {
+            throw new ImplerException("Failed to retrieve location path");
         }
 
-        final Path originPath;
-        try {
-            final CodeSource codeSource = token.getProtectionDomain().getCodeSource();
-            String uri = codeSource == null ? "" : codeSource.getLocation().getPath();
-            if (uri.startsWith("/")) {
-                uri = uri.substring(1);
-            }
-            originPath = Path.of(uri);
-        } catch (final InvalidPathException e) {
-            throw new ImplerException(String.format("Can not find valid class path: %s", e));
+        final JavaCompiler javaCompiler = ToolProvider.getSystemJavaCompiler();
+        if (javaCompiler == null) {
+            throw new ImplerException("No Java compiler provided");
         }
-        final String[] cmdArgs = new String[]{
+
+        final String[] compilerArgs = {
                 "-cp",
-                tmpDir.toString() + File.pathSeparator + originPath.toString(),
-                Path.of(tmpDir.toString(), token.getPackageName().replace('.', File.separatorChar), getClassName(token) + ".java").toString()
+                subPath,
+                tmpDir.resolve(getImplementationPath(token, File.separator) + "Impl.java").toString(),
         };
-        System.out.println(Path.of(tmpDir.toString(), token.getPackageName().replace('.', File.separatorChar), getClassName(token) + ".java").toString());
-        if (compiler.run(null, null, null, cmdArgs) != 0) {
-            throw new ImplerException("Can not compile generated code");
+
+        final int returnCode = javaCompiler.run(null, null, null, compilerArgs);
+        if (returnCode != 0) {
+            throw new ImplerException("Implementation compilation returned non-zero code " + returnCode);
         }
     }
 
@@ -118,12 +118,11 @@ public class JarImplementor extends Implementor implements JarImpler {
         manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
 
         try (final JarOutputStream stream = new JarOutputStream(Files.newOutputStream(jarFile), manifest)) {
-            final String pathSuffix = token.getPackageName().replace('.', '/') + "/" + getClassName(token) + ".class";
-            System.out.println(pathSuffix);
-            stream.putNextEntry(new ZipEntry(pathSuffix));
-            Files.copy(tempDirectory.resolve(pathSuffix), stream);
+            final String implementationPath = getImplementationPath(token, "/") + "Impl.class";
+            stream.putNextEntry(new ZipEntry(implementationPath));
+            Files.copy(Path.of(tempDirectory.toString(), implementationPath), stream);
         } catch (final IOException e) {
-            throw new ImplerException(e.getMessage());
+            throw new ImplerException("Failed to write JAR", e);
         }
     }
 
