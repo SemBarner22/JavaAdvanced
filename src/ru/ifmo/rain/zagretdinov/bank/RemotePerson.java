@@ -11,7 +11,7 @@ public class RemotePerson extends AbstractPerson {
     }
 
     @Override
-    public void createAccount(String bankAccount) throws RemoteException {
+    public synchronized void createAccount(String bankAccount) throws RemoteException {
         accounts.putIfAbsent(bankAccount, bank.createAccount(bankAccount));
     }
 }

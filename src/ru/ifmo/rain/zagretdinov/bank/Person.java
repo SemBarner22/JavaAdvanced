@@ -2,7 +2,6 @@ package ru.ifmo.rain.zagretdinov.bank;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
-import java.util.concurrent.ConcurrentMap;
 
 public interface Person extends Remote {
     int getPassId() throws RemoteException;
@@ -11,7 +10,9 @@ public interface Person extends Remote {
 
     String getSurname() throws RemoteException;
 
-    ConcurrentMap getAccounts() throws RemoteException;
+    Account getAccount(String accId) throws RemoteException;
+
+//    ConcurrentMap<String, Account> getAccounts() throws RemoteException;
 
     void createAccount(String bankAccount) throws RemoteException;
 

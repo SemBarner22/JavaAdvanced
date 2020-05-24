@@ -9,12 +9,26 @@ public class RemoteBank implements Bank {
     private final ConcurrentMap<String, Account> accounts = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, Person> bankClients = new ConcurrentHashMap<>();
 
+    public int getPort() {
+        return port;
+    }
+
+    @Override
+    public ConcurrentMap getAccounts() {
+        return accounts;
+    }
+
+    @Override
+    public ConcurrentMap getBankClients() {
+        return bankClients;
+    }
+
     public RemoteBank(final int port) {
         this.port = port;
     }
 
     @Override
-    public Person getRemotePerson(final int passId) {
+    public synchronized Person getRemotePerson(final int passId) {
         return bankClients.get(passId);
     }
 
@@ -22,19 +36,13 @@ public class RemoteBank implements Bank {
     public synchronized Person getLocalPerson(final int passId) throws RemoteException {
         Person remotePerson = bankClients.get(passId);
         if (remotePerson != null) {
-            final Person person = new LocalPerson(remotePerson.getName(), remotePerson.getSurname(), remotePerson.getPassId());
-            var setSubId = remotePerson.getAccounts().keySet();
-            for (var s : setSubId) {
-                Account account = accounts.get(s);
-                person.getAccounts().putIfAbsent(s.toString(), new LocalAccount(account.getId(), account.getAmount()));
-            }
-            return person;
+            return new LocalPerson((RemotePerson) remotePerson);
         }
         return null;
     }
 
     @Override
-    public Person createRemotePerson(final String name, final String surname, final int passId) throws RemoteException {
+    public synchronized Person createRemotePerson(final String name, final String surname, final int passId) throws RemoteException {
         Person person = new RemotePerson(name, surname, passId, this);
         bankClients.put(passId, person);
         UnicastRemoteObject.exportObject(person, port);
@@ -42,15 +50,15 @@ public class RemoteBank implements Bank {
     }
 
     @Override
-    public Person createLocalPerson(String name, String surname, int passId) throws RemoteException {
-        Person person = new RemotePerson(name, surname, passId, this);
+    public synchronized Person createLocalPerson(String name, String surname, int passId) throws RemoteException {
+        RemotePerson person = new RemotePerson(name, surname, passId, this);
         bankClients.put(passId, person);
         UnicastRemoteObject.exportObject(person, port);
-        return new LocalPerson(name, surname, passId);
+        return new LocalPerson(person);
     }
 
     @Override
-    public Account createAccount(final String id) throws RemoteException {
+    public synchronized Account createAccount(final String id) throws RemoteException {
         System.out.println("Creating account " + id);
         final Account account = new RemoteAccount(id);
         if (accounts.putIfAbsent(id, account) == null) {
@@ -62,7 +70,7 @@ public class RemoteBank implements Bank {
     }
 
     @Override
-    public Account getAccount(final String id) {
+    public synchronized Account getAccount(final String id) {
         System.out.println("Retrieving account " + id);
         return accounts.get(id);
     }

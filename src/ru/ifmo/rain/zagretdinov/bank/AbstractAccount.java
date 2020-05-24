@@ -10,11 +10,18 @@ public abstract class AbstractAccount implements Account {
         amount = 0;
     }
 
-
-    AbstractAccount() {};
+    AbstractAccount() {}
 
     public String getId() {
         return id;
+    }
+
+    public synchronized int getAmount() {
+        return amount;
+    }
+
+    public synchronized void setAmount(final int amount) {
+        this.amount = amount;
     }
 //
 //    abstract public int getAmount();

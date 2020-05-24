@@ -37,13 +37,13 @@ public class Client {
             } else {
                 System.out.println("Person already exists");
             }
-            System.out.println((person.getAccounts().get(bankAccount) != null ?
-                    (((Account) person.getAccounts().get(bankAccount)).getAmount()) : 0));
+            System.out.println((person.getAccount(bankAccount) != null ?
+                    ((person.getAccount(bankAccount).getAmount())) : 0));
             person.createAccount(bankAccount);
-            ((Account) person.getAccounts().get(bankAccount)).setAmount(
-                    ((Account) person.getAccounts().get(bankAccount)).getAmount() + moneyDelta);
-            System.out.println((person.getAccounts().get(bankAccount) != null ?
-                    (((Account) person.getAccounts().get(bankAccount)).getAmount()) : 0));
+            (person.getAccount(bankAccount)).setAmount(
+                    (person.getAccount(bankAccount)).getAmount() + moneyDelta);
+            System.out.println((person.getAccount(bankAccount)) != null ?
+                    ((person.getAccount(bankAccount)).getAmount()) : 0);
 
             Account account = bank.getAccount(bankAccount);
             if (account == null) {

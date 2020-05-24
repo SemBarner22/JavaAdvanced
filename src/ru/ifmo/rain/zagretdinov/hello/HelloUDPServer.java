@@ -2,7 +2,9 @@ package ru.ifmo.rain.zagretdinov.hello;
 
 import info.kgeorgiy.java.advanced.hello.HelloServer;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketException;
@@ -26,22 +28,24 @@ public class HelloUDPServer implements HelloServer {
             System.err.println("Usage: [port], [threads amount]");
             return;
         }
-        try (HelloUDPServer server = new HelloUDPServer()){
+        try (HelloUDPServer server = new HelloUDPServer()) {
             final int port = Integer.parseInt(args[0]);
             final int threads = Integer.parseInt(args[1]);
             server.start(port, threads);
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+            System.out.println("Server has started, press any button to stop");
+            reader.readLine();
         } catch (final NumberFormatException e) {
             System.err.println("Port and threads amount should be integer");
+        } catch (IOException e) {
+            System.err.println("An error happened during reading: " + e.getMessage());
         }
     }
 
     @Override
     public void start(final int port, final int threads) {
         final int size;
-        if (port < 0 || threads <= 0) {
-            System.err.println("Port and threads amount should be positive");
-            return;
-        }
         try {
             socket = new DatagramSocket(port);
             size = socket.getReceiveBufferSize();

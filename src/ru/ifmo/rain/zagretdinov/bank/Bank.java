@@ -2,6 +2,7 @@ package ru.ifmo.rain.zagretdinov.bank;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.util.concurrent.ConcurrentMap;
 
 public interface Bank extends Remote {
     /**
@@ -15,6 +16,11 @@ public interface Bank extends Remote {
 
     Person getLocalPerson(final int passId) throws RemoteException;
 
+    ConcurrentMap getAccounts() throws RemoteException;
+
+    ConcurrentMap getBankClients() throws RemoteException;
+
+    int getPort() throws RemoteException;
     /**
      * Returns account by identifier.
      * @param id account id
